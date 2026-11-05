@@ -252,9 +252,11 @@ def compare_dwg_reader_csv(
     with path.open(encoding="utf-8-sig", newline="") as source:
         rows = list(csv.reader(source))
     external_layers: dict[str, Decimal] = {}
+    layer_section_found = False
     for index, row in enumerate(rows):
         if not row or row[0].strip() != "[图层几何量]":
             continue
+        layer_section_found = True
         if index + 1 >= len(rows):
             continue
         headers = rows[index + 1]
@@ -266,6 +268,14 @@ def compare_dwg_reader_csv(
             if layer:
                 external_layers[layer] = _decimal(record.get("直线总长"))
         break
+
+    if not layer_section_found:
+        return {
+            "external_engine": "dwg_reader",
+            "overall_status": "no_comparable_metrics",
+            "metrics": [],
+            "rules": ["DWG Reader output did not include the layer geometry section."],
+        }
 
     native_rows = native_report.get("measurements", [])
     has_inserts = any(item.get("entity_type") == "INSERT" for item in native_rows)
