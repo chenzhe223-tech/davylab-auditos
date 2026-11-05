@@ -165,7 +165,6 @@ def compare_cad_ai_takeoff(
     """Compare CAD AI Agent's LINE/LWPOLYLINE and symbol candidates."""
     rows = native_report.get("measurements", [])
     metrics = []
-    has_inserts = any(item.get("entity_type") == "INSERT" for item in rows)
     for item in external_report.get("items", []):
         category = item.get("category")
         if category == "linear" and item.get("source_layer"):
@@ -187,7 +186,7 @@ def compare_cad_ai_takeoff(
                     "line_and_lwpolyline_length",
                     native_value,
                     _decimal(item.get("quantity")),
-                    comparable=not has_bulge and not has_inserts,
+                    comparable=not has_bulge,
                     absolute_tolerance=Decimal("0.005"),
                 ),
             })
