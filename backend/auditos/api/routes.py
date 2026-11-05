@@ -14,6 +14,7 @@ from auditos.audit_engine.settlement_checks import review_rows
 from auditos.domain.models import ProjectCreate, ProjectRead
 from auditos.drawings.adapters import DwgReaderAdapter
 from auditos.drawings.geometry import analyze_dxf_geometry
+from auditos.drawings.mapping import get_mapping_templates, suggest_layer_mappings
 from auditos.drawings.models import DrawingAnalysisRequest, TakeoffRequest
 from auditos.drawings.router import classify_task
 from auditos.drawings.service import engine_capabilities, plan_takeoff
@@ -53,6 +54,15 @@ def get_project(project_id: str) -> ProjectRead:
 @router.get("/drawings/engines", tags=["drawings"])
 def get_drawing_engines() -> dict:
     return {"engines": [item.model_dump(mode="json") for item in engine_capabilities()]}
+
+
+@router.get("/drawings/mapping-templates", tags=["drawings"])
+def list_drawing_mapping_templates(discipline: str = "all") -> dict:
+    return {
+        "discipline": discipline,
+        "templates": get_mapping_templates(discipline),
+        "notice": "模板仅用于图层识别建议，不代表国家规范、地方定额或项目已确认计量规则。",
+    }
 
 
 @router.post("/projects/{project_id}/drawings/plan", tags=["drawings"])
@@ -164,6 +174,9 @@ def analyze_uploaded_drawing(
     report["source_drawing_sha256"] = drawing["sha256"]
     report["drawing_revision"] = drawing.get("revision")
     report["task"] = task.value if hasattr(task, "value") else str(task)
+    report["mapping_suggestions"] = suggest_layer_mappings(
+        [item["layer"] for item in report["layers"]], payload.discipline
+    )
     if conversion_result:
         report["conversion"] = {
             "engine": conversion_result["engine"],
