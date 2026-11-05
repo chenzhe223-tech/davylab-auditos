@@ -247,7 +247,7 @@ class ProjectRepository:
         if candidate_id is not None:
             query += " AND candidate_id = ?"
             params = (run_id, candidate_id)
-        query += " ORDER BY created_at DESC"
+        query += " ORDER BY created_at DESC, rowid DESC"
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
         return [
