@@ -80,6 +80,19 @@ class ProjectRepository:
                     report_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS drawing_candidate_reviews (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    run_id TEXT NOT NULL REFERENCES drawing_runs(id),
+                    candidate_id TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    original_quantity TEXT,
+                    reviewed_quantity TEXT,
+                    note TEXT NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS project_layer_mappings (
                     project_id TEXT NOT NULL REFERENCES projects(id),
                     rule_id TEXT NOT NULL,
@@ -197,6 +210,57 @@ class ProjectRepository:
                 (project_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+    def create_drawing_candidate_review(
+        self,
+        project_id: str,
+        drawing_id: str,
+        run_id: str,
+        candidate_id: str,
+        decision: str,
+        original_quantity: str | None,
+        reviewed_quantity: str | None,
+        note: str,
+        reviewer: str,
+    ) -> dict[str, Any]:
+        review_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawing_candidate_reviews VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (review_id, project_id, drawing_id, run_id, candidate_id, decision,
+                 original_quantity, reviewed_quantity, note, reviewer, created_at),
+            )
+        return {
+            "id": review_id, "project_id": project_id, "drawing_id": drawing_id,
+            "run_id": run_id, "candidate_id": candidate_id, "decision": decision,
+            "original_quantity": original_quantity, "reviewed_quantity": reviewed_quantity,
+            "note": note, "reviewer": reviewer, "created_at": created_at,
+        }
+
+    def list_drawing_candidate_reviews(
+        self, run_id: str, candidate_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM drawing_candidate_reviews WHERE run_id = ?"
+        params: tuple[Any, ...] = (run_id,)
+        if candidate_id is not None:
+            query += " AND candidate_id = ?"
+            params = (run_id, candidate_id)
+        query += " ORDER BY created_at DESC"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            {
+                "id": row["id"], "project_id": row["project_id"],
+                "drawing_id": row["drawing_id"], "run_id": row["run_id"],
+                "candidate_id": row["candidate_id"], "decision": row["decision"],
+                "original_quantity": row["original_quantity"],
+                "reviewed_quantity": row["reviewed_quantity"], "note": row["note"],
+                "reviewer": row["reviewer"], "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def create_drawing_run(
         self,
