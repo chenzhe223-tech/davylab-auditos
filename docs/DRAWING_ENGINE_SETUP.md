@@ -87,7 +87,8 @@ pip install "ezdxf[draw]" matplotlib pyyaml
   "task_description": "统计管道长度",
   "measurement_kind": "linear",
   "layer_patterns": ["M-PIPE*", "*给水管*"],
-  "source_unit_override": "mm"
+  "source_unit_override": "mm",
+  "include_external_crosschecks": true
 }
 ```
 
@@ -111,6 +112,8 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 项目映射优先于通用模板，但依然标记为待确认；修改同一 `rule_id` 会创建新版本，不会把它变成正式定额规则。建议器还会将规则预期实体类型与图纸实际实体类型对照；例如文字层命中管线规则时会标记实体类型不匹配，不会静默采用。
 
 分析结果中的 `mapped_takeoff_candidates` 会按映射规则聚合长度/面积/块数，并保留实体 Handle。存在歧义、实体类型不匹配或单位未知时，不生成数值；可生成数值的结果也只标记为 `candidate_for_human_review`，不等于已确认清单量。
+
+启用 `include_external_crosschecks` 后，AuditOS 会尝试运行已安装的 DWG Reader、CAD AI Agent 和 DXF Civil。原生内核始终保留为计算主结果；DXF Civil 的兼容指标会按图层比较，bulge 圆弧和 HATCH 近似不参与比较。CAD AI Agent 与 DWG Reader 当前先保存候选输出，待输出字段进一步标准化后再纳入数值差异比较。任何差异都不会被平均或自动覆盖。
 
 ## 6. 安全与计量边界
 
