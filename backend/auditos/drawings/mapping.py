@@ -181,6 +181,7 @@ def suggest_layer_mappings(
             "layer": layer,
             "status": "candidate_needs_confirmation" if len(matches) == 1
                       else "ambiguous_needs_manual_mapping",
+            "mapping_source": matches[0].source,
             "candidates": [rule.model_dump(mode="json") for rule in matches],
             "notice": (
                 "存在多个候选映射，禁止自动归类。"
