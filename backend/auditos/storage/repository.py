@@ -220,6 +220,23 @@ class ProjectRepository:
             "report": report,
         }
 
+    def get_drawing_run(
+        self, run_id: str, drawing_id: str, project_id: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM drawing_runs WHERE id = ? AND drawing_id = ? AND project_id = ?",
+                (run_id, drawing_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"], "project_id": row["project_id"],
+            "drawing_id": row["drawing_id"], "task": row["task"],
+            "engine_id": row["engine_id"], "report": json.loads(row["report_json"]),
+            "created_at": row["created_at"],
+        }
+
     def list_drawing_runs(self, drawing_id: str, project_id: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
