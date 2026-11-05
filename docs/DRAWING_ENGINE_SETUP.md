@@ -117,7 +117,7 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 
 - DWG Reader：只比较按图层的 LINE 长度；不把多段线长度或构件识别数量直接当作同口径指标；存在 INSERT 时保守跳过线长对比。
 - CAD AI Agent：比较 LINE/LWPOLYLINE 长度及按块名汇总的 INSERT 数量；bulge 多段线不参与线长比较。
-- DXF Civil：比较 LINE/ARC/POLYLINE 长度、闭合多段线面积、圆面积和块插入数；bulge 敏感指标与 HATCH 包围盒近似不参与比较。
+- DXF Civil：比较 LINE/ARC/POLYLINE 长度、闭合多段线面积、圆面积和块插入数；bulge 敏感指标、HATCH 包围盒近似，以及可能存在块展开口径差异的图纸均不参与相关数值比较。
 
 原生内核始终保留为计算主结果；不同引擎不做平均、不静默覆盖。任何差异都需要查看原图、实体证据和引擎口径后由专业人员判断。
 
