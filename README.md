@@ -49,6 +49,7 @@ uvicorn auditos.main:app --reload
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：读取分析历史。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出算量证据工作簿。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/entities/{handle}`：回查实体几何和证据。
+- `GET/POST /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/candidates`：查看并复核候选工程量。
 - `GET /api/drawings/mapping-templates`：查看安装专业图层映射模板。
 - `GET/POST /api/projects/{project_id}/drawings/mappings`：维护项目自定义映射，自动版本化。
 - `GET /api/projects/{project_id}/drawings/mappings/{rule_id}/history`：查询映射历史版本。
