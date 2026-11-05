@@ -7,11 +7,10 @@ from auditos.main import app
 from auditos.storage.repository import ProjectRepository
 
 
-def test_drawing_plan_api(tmp_path, monkeypatch):
+def test_drawing_plan_api(tmp_path):
     routes.repository = ProjectRepository(tmp_path / "drawing-api.sqlite3")
     client = TestClient(app)
     project = routes.repository.create_project(ProjectCreate(name="安装工程图纸算量"))
-
     response = client.post(
         f"/api/projects/{project.id}/drawings/plan",
         json={
@@ -27,8 +26,8 @@ def test_drawing_plan_api(tmp_path, monkeypatch):
     assert result["ready"] is False
 
 
-def test_engine_capabilities_api(monkeypatch):
-    routes.repository = ProjectRepository()
+def test_engine_capabilities_api(monkeypatch, tmp_path):
+    routes.repository = ProjectRepository(tmp_path / "drawing-api.sqlite3")
     monkeypatch.setattr(
         "auditos.api.routes.engine_capabilities",
         lambda: [EngineCapability(
