@@ -78,6 +78,7 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 - `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期长度、闭合面积或块数分析。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：查看算量历史和证据。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出候选工程量、实体证据、映射状态和运行信息工作簿。
+- `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/entities/{handle}`：按实体 Handle 回查几何坐标、原始测量证据和图纸哈希。
 
 分析 JSON 示例：
 
