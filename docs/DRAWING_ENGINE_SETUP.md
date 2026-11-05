@@ -113,7 +113,13 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 
 分析结果中的 `mapped_takeoff_candidates` 会按映射规则聚合长度/面积/块数，并保留实体 Handle。存在歧义、实体类型不匹配或单位未知时，不生成数值；可生成数值的结果也只标记为 `candidate_for_human_review`，不等于已确认清单量。
 
-启用 `include_external_crosschecks` 后，AuditOS 会尝试运行已安装的 DWG Reader、CAD AI Agent 和 DXF Civil。原生内核始终保留为计算主结果；DXF Civil 的兼容指标会按图层比较，bulge 圆弧和 HATCH 近似不参与比较。CAD AI Agent 与 DWG Reader 当前先保存候选输出，待输出字段进一步标准化后再纳入数值差异比较。任何差异都不会被平均或自动覆盖。
+启用 `include_external_crosschecks` 后，AuditOS 会尝试运行已安装的 DWG Reader、CAD AI Agent 和 DXF Civil，并把比较结果写入 `cross_engine_comparisons`：
+
+- DWG Reader：只比较按图层的 LINE 长度；不把多段线长度或构件识别数量直接当作同口径指标；存在 INSERT 时保守跳过线长对比。
+- CAD AI Agent：比较 LINE/LWPOLYLINE 长度及按块名汇总的 INSERT 数量；bulge 多段线不参与线长比较。
+- DXF Civil：比较 LINE/ARC/POLYLINE 长度、闭合多段线面积、圆面积和块插入数；bulge 敏感指标与 HATCH 包围盒近似不参与比较。
+
+原生内核始终保留为计算主结果；不同引擎不做平均、不静默覆盖。任何差异都需要查看原图、实体证据和引擎口径后由专业人员判断。
 
 ## 6. 安全与计量边界
 
