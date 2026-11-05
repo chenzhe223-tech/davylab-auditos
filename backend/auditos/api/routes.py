@@ -194,6 +194,7 @@ def analyze_uploaded_drawing(
         [item["layer"] for item in report["layers"]],
         payload.discipline,
         repository.list_project_layer_mappings(project_id),
+        {item["layer"]: list(item["entity_types"]) for item in report["layers"]},
     )
     if conversion_result:
         report["conversion"] = {
