@@ -108,5 +108,5 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     assert exported.status_code == 200
     workbook = load_workbook(BytesIO(exported.content), read_only=True)
     assert workbook.sheetnames == ["算量候选", "实体证据", "图层映射", "运行信息"]
-    assert workbook["算量候选"]["D2"].value == "2.0"
+    assert float(workbook["算量候选"]["D2"].value) == 2.0
     assert workbook["实体证据"]["A2"].value
