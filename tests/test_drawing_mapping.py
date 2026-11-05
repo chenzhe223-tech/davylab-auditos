@@ -46,8 +46,10 @@ def test_project_mapping_is_versioned_and_overrides_template(tmp_path):
     assert first["version"] == 1
     assert second["version"] == 2
     saved = repository.list_project_layer_mappings(project.id)
+    history = repository.list_project_layer_mapping_history(project.id, "project.water.pipe")
     result = suggest_layer_mappings(["给水管-立管"], "plumbing", saved)[0]
 
+    assert [item["version"] for item in history] == [2, 1]
     assert result["mapping_source"] == "project_custom"
     assert result["candidates"][0]["item_name"] == "项目自定义给水管"
     assert result["candidates"][0]["version"] == 2
