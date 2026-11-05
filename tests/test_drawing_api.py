@@ -109,6 +109,31 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     assert entity_detail.json()["entity"]["geometry"]["end"] == [2000.0, 0.0, 0.0]
     assert entity_detail.json()["requires_visual_review"] is True
 
+    candidate_id = mapped["candidate_id"]
+    candidates_url = (
+        f"/api/projects/{project.id}/drawings/{drawing['id']}/runs/{run['id']}/candidates"
+    )
+    confirmed = client.post(
+        f"{candidates_url}/{candidate_id}/review",
+        json={"decision": "confirmed", "note": "图纸和尺寸已复核"},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["reviewed_quantity"] == confirmed.json()["original_quantity"]
+
+    adjusted = client.post(
+        f"{candidates_url}/{candidate_id}/review",
+        json={
+            "decision": "adjusted",
+            "reviewed_quantity": "2.1",
+            "note": "现场复核后补充了连接段长度",
+        },
+    )
+    assert adjusted.status_code == 200
+    candidate_state = client.get(candidates_url).json()[0]
+    assert candidate_state["latest_review"]["decision"] == "adjusted"
+    assert len(candidate_state["review_history"]) == 2
+    assert candidate_state["latest_review"]["reviewed_quantity"] == "2.1"
+
     history = client.get(
         f"/api/projects/{project.id}/drawings/{drawing['id']}/runs"
     )
@@ -120,6 +145,7 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     )
     assert exported.status_code == 200
     workbook = load_workbook(BytesIO(exported.content), read_only=True)
-    assert workbook.sheetnames == ["算量候选", "实体证据", "图层映射", "运行信息"]
+    assert workbook.sheetnames == ["算量候选", "实体证据", "图层映射", "运行信息", "复核记录"]
     assert float(workbook["算量候选"]["D2"].value) == 2.0
     assert workbook["实体证据"]["A2"].value
+    assert workbook["复核记录"]["B2"].value in {"adjusted", "confirmed"}
