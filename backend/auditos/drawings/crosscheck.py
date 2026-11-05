@@ -242,7 +242,8 @@ def compare_dwg_reader_csv(
             "overall_status": "candidate_output_missing",
             "metrics": [],
         }
-    rows = list(csv.reader(path.open(encoding="utf-8-sig", newline="")))
+    with path.open(encoding="utf-8-sig", newline="") as source:
+        rows = list(csv.reader(source))
     external_layers: dict[str, Decimal] = {}
     for index, row in enumerate(rows):
         if not row or row[0].strip() != "[图层几何量]":
