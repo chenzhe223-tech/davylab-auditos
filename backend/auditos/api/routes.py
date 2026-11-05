@@ -15,8 +15,8 @@ from auditos.domain.models import ProjectCreate, ProjectRead
 from auditos.drawings.adapters import CadAiAgentAdapter, DwgReaderAdapter, DxfCivilAdapter
 from auditos.drawings.crosscheck import (
     compare_cad_ai_takeoff,
-    compare_dxf_civil_takeoff,
     compare_dwg_reader_csv,
+    compare_dxf_civil_takeoff,
 )
 from auditos.drawings.geometry import analyze_dxf_geometry, extract_entity_geometry
 from auditos.drawings.mapping import (
