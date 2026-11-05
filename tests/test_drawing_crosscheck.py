@@ -134,4 +134,4 @@ def test_dwg_reader_csv_compares_only_line_lengths(tmp_path):
 
     assert result["overall_status"] == "match"
     assert result["metrics"][0]["metric"] == "line_length"
-    assert result["metrics"][0]["difference"] == "0"
+    assert float(result["metrics"][0]["difference"]) == 0
