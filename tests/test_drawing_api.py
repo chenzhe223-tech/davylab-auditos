@@ -86,6 +86,10 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     assert run["report"]["drawing_revision"] == "A"
     assert run["report"]["mapping_suggestions"][0]["status"] == "candidate_needs_confirmation"
     assert run["report"]["mapping_suggestions"][0]["candidates"][0]["rule_id"] == "plumbing.water_supply.length"
+    mapped = run["report"]["mapped_takeoff_candidates"][0]
+    assert mapped["status"] == "candidate_for_human_review"
+    assert float(mapped["quantity"]) == 2.0
+    assert mapped["evidence_handles"]
     assert len(run["report"]["measurements"]) == 1
     assert run["report"]["measurements"][0]["entity_handle"]
 
