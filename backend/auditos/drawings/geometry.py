@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import ezdxf
+from ezdxf.lldxf.const import DXFStructureError
 
 SUPPORTED_UNITS: dict[int, tuple[str, Decimal]] = {
     1: ("in", Decimal("0.0254")),
@@ -154,7 +155,7 @@ def analyze_dxf_geometry(
         raise DrawingGeometryError("DXF file is missing or empty.")
     try:
         doc = ezdxf.readfile(path)
-    except (OSError, ezdxf.DXFStructureError) as exc:
+    except (OSError, DXFStructureError) as exc:
         raise DrawingGeometryError(f"Unable to parse DXF: {exc}") from exc
 
     source_unit, to_meters = _unit_info(doc, source_unit_override)
