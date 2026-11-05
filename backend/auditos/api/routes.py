@@ -232,6 +232,113 @@ def list_drawing_analysis_runs(project_id: str, drawing_id: str) -> list[dict]:
     return repository.list_drawing_runs(drawing_id, project_id)
 
 
+@router.get(
+    "/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx",
+    tags=["reports"],
+)
+def export_drawing_takeoff(
+    project_id: str, drawing_id: str, run_id: str
+) -> StreamingResponse:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if repository.get_drawing(drawing_id, project_id) is None:
+        raise HTTPException(status_code=404, detail="Drawing not found in this project")
+    run = repository.get_drawing_run(run_id, drawing_id, project_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Drawing analysis run not found")
+
+    report = run["report"]
+    workbook = Workbook()
+    candidates_sheet = workbook.active
+    candidates_sheet.title = "算量候选"
+    candidates_sheet.append([
+        "专业", "候选清单项", "单位", "候选数量", "来源图层", "状态",
+        "可信等级", "实体Handle", "需人工复核", "说明",
+    ])
+    for item in report.get("mapped_takeoff_candidates", []):
+        candidates_sheet.append([
+            item.get("discipline"), item.get("item_name"), item.get("unit"),
+            str(item.get("quantity")) if item.get("quantity") is not None else None,
+            item.get("layer"), item.get("status"), item.get("confidence_class"),
+            ", ".join(item.get("evidence_handles", [])),
+            "是" if item.get("requires_human_review", True) else "否",
+            item.get("notice"),
+        ])
+
+    evidence_sheet = workbook.create_sheet("实体证据")
+    evidence_sheet.append([
+        "实体Handle", "图层", "实体类型", "测量类型", "原始值", "原始单位",
+        "标准值", "标准单位", "计算公式", "可信等级", "警告",
+    ])
+    for item in report.get("measurements", []):
+        evidence_sheet.append([
+            item.get("entity_handle"), item.get("layer"), item.get("entity_type"),
+            item.get("measurement_kind"), str(item.get("raw_value")),
+            item.get("source_unit"), str(item.get("normalized_value"))
+            if item.get("normalized_value") is not None else None,
+            item.get("normalized_unit"), item.get("formula"),
+            item.get("confidence_class"), "; ".join(item.get("warnings", [])),
+        ])
+
+    mapping_sheet = workbook.create_sheet("图层映射")
+    mapping_sheet.append([
+        "图层", "映射状态", "映射来源", "规则编号", "候选清单项",
+        "专业", "计量类型", "单位", "实体类型检查", "实际实体类型", "说明",
+    ])
+    for suggestion in report.get("mapping_suggestions", []):
+        candidates = suggestion.get("candidates", [])
+        if not candidates:
+            mapping_sheet.append([
+                suggestion.get("layer"), suggestion.get("status"), None, None, None,
+                None, None, None, None, None, suggestion.get("notice"),
+            ])
+        for rule in candidates:
+            mapping_sheet.append([
+                suggestion.get("layer"), suggestion.get("status"),
+                suggestion.get("mapping_source"), rule.get("rule_id"),
+                rule.get("item_name"), rule.get("discipline"),
+                rule.get("measurement_kind"), rule.get("unit"),
+                rule.get("entity_type_check"),
+                ", ".join(rule.get("actual_entity_types", [])), rule.get("notes"),
+            ])
+
+    info_sheet = workbook.create_sheet("运行信息")
+    info_sheet.append(["字段", "值"])
+    for key, value in [
+        ("项目ID", project_id), ("图纸ID", drawing_id), ("运行ID", run_id),
+        ("任务", run["task"]), ("引擎", run["engine_id"]),
+        ("原始文件", report.get("source_filename")),
+        ("原始图纸SHA-256", report.get("source_drawing_sha256")),
+        ("分析文件SHA-256", report.get("drawing_sha256")),
+        ("图纸修订", report.get("drawing_revision")),
+        ("源单位", report.get("source_unit")),
+        ("单位状态", report.get("unit_status")),
+        ("范围", report.get("scope")),
+        ("警告", "; ".join(report.get("warnings", []))),
+    ]:
+        info_sheet.append([key, value])
+
+    for sheet in workbook.worksheets:
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for column in sheet.columns:
+            letter = column[0].column_letter
+            longest = max(len(str(cell.value or "")) for cell in column)
+            sheet.column_dimensions[letter].width = min(max(longest + 2, 12), 56)
+
+    with tempfile.SpooledTemporaryFile() as output:
+        workbook.save(output)
+        output.seek(0)
+        content = output.read()
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="auditos-takeoff-{run_id}.xlsx"'
+        },
+    )
+
+
 @router.post("/projects/{project_id}/settlements/audit", tags=["settlement"])
 async def audit_settlement(project_id: str, file: UploadFile = UPLOAD_FIELD) -> dict:
     if repository.get_project(project_id) is None:
