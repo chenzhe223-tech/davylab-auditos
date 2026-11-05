@@ -80,6 +80,14 @@ class ProjectRepository:
                     report_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS drawing_revision_comparisons (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    base_drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    target_drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    report_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS drawing_candidate_reviews (
                     id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL REFERENCES projects(id),
@@ -211,6 +219,49 @@ class ProjectRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+
+
+    def create_drawing_revision_comparison(
+        self,
+        project_id: str,
+        base_drawing_id: str,
+        target_drawing_id: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        comparison_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawing_revision_comparisons VALUES (?, ?, ?, ?, ?, ?)",
+                (comparison_id, project_id, base_drawing_id, target_drawing_id,
+                 json.dumps(report, ensure_ascii=False, default=str), created_at),
+            )
+        return {
+            "id": comparison_id,
+            "project_id": project_id,
+            "base_drawing_id": base_drawing_id,
+            "target_drawing_id": target_drawing_id,
+            "report": report,
+            "created_at": created_at,
+        }
+
+    def list_drawing_revision_comparisons(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM drawing_revision_comparisons WHERE project_id = ? "
+                "ORDER BY created_at DESC, rowid DESC",
+                (project_id,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"], "project_id": row["project_id"],
+                "base_drawing_id": row["base_drawing_id"],
+                "target_drawing_id": row["target_drawing_id"],
+                "report": json.loads(row["report_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def create_drawing_candidate_review(
         self,
