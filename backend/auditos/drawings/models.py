@@ -49,11 +49,13 @@ class MeasurementEvidence(BaseModel):
     source_text: str | None = None
     dimension_text: str | None = None
     source_unit: str | None = None
+    raw_unit: str | None = None
     normalized_unit: str | None = None
+    measurement_kind: str
     coordinate_scale: Decimal | None = None
     measurement_method: str
     raw_value: Decimal
-    normalized_value: Decimal
+    normalized_value: Decimal | None = None
     formula: str
     confidence_class: ConfidenceClass
     warning_codes: list[str] = Field(default_factory=list)
@@ -93,7 +95,7 @@ class TakeoffRequest(BaseModel):
 class TakeoffCandidate(BaseModel):
     name: str
     unit: str
-    quantity: Decimal
+    quantity: Decimal | None = None
     source_layer: str | None = None
     source_entity_refs: list[str] = Field(default_factory=list)
     method: str
