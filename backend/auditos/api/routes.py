@@ -19,6 +19,7 @@ from auditos.drawings.crosscheck import (
     compare_dxf_civil_takeoff,
 )
 from auditos.drawings.geometry import analyze_dxf_geometry, extract_entity_geometry
+from auditos.drawings.revisions import compare_drawing_revision_reports
 from auditos.drawings.mapping import (
     build_mapped_takeoff_candidates,
     get_mapping_templates,
@@ -27,6 +28,7 @@ from auditos.drawings.mapping import (
 from auditos.drawings.models import (
     CandidateReviewRequest,
     DrawingAnalysisRequest,
+    DrawingRevisionCompareRequest,
     ProjectLayerMapping,
     TakeoffRequest,
 )
@@ -68,6 +70,56 @@ def get_project(project_id: str) -> ProjectRead:
 @router.get("/drawings/engines", tags=["drawings"])
 def get_drawing_engines() -> dict:
     return {"engines": [item.model_dump(mode="json") for item in engine_capabilities()]}
+
+
+@router.post("/projects/{project_id}/drawings/compare-revisions", tags=["drawings"])
+def compare_project_drawing_revisions(
+    project_id: str, payload: DrawingRevisionCompareRequest
+) -> dict:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if payload.base_drawing_id == payload.target_drawing_id:
+        raise HTTPException(status_code=422, detail="Base and target drawings must be different")
+    base = repository.get_drawing(payload.base_drawing_id, project_id)
+    target = repository.get_drawing(payload.target_drawing_id, project_id)
+    if base is None or target is None:
+        raise HTTPException(status_code=404, detail="Both drawings must belong to this project")
+    if Path(base["stored_path"]).suffix.lower() != ".dxf" or Path(target["stored_path"]).suffix.lower() != ".dxf":
+        raise HTTPException(
+            status_code=415,
+            detail="Revision comparison currently accepts DXF files only; convert DWG to DXF first.",
+        )
+    try:
+        base_report = analyze_dxf_geometry(
+            Path(base["stored_path"]),
+            source_unit_override=payload.base_source_unit_override or base.get("source_unit"),
+        )
+        target_report = analyze_dxf_geometry(
+            Path(target["stored_path"]),
+            source_unit_override=payload.target_source_unit_override or target.get("source_unit"),
+        )
+        comparison = compare_drawing_revision_reports(base_report, target_report)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Revision comparison failed: {exc}") from exc
+
+    comparison["base_drawing"] = {
+        "id": base["id"], "filename": base["filename"],
+        "revision": base.get("revision"), "sha256": base["sha256"],
+    }
+    comparison["target_drawing"] = {
+        "id": target["id"], "filename": target["filename"],
+        "revision": target.get("revision"), "sha256": target["sha256"],
+    }
+    return repository.create_drawing_revision_comparison(
+        project_id, payload.base_drawing_id, payload.target_drawing_id, comparison
+    )
+
+
+@router.get("/projects/{project_id}/drawings/revision-comparisons", tags=["drawings"])
+def list_project_drawing_revision_comparisons(project_id: str) -> list[dict]:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return repository.list_drawing_revision_comparisons(project_id)
 
 
 @router.get("/drawings/mapping-templates", tags=["drawings"])
