@@ -137,6 +137,24 @@ class ProjectRepository:
             ).fetchall()
         return [json.loads(row["payload"]) for row in rows]
 
+    def list_project_layer_mapping_history(
+        self, project_id: str, rule_id: str
+    ) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT version, payload, created_at FROM project_layer_mapping_history "
+                "WHERE project_id = ? AND rule_id = ? ORDER BY version DESC",
+                (project_id, rule_id),
+            ).fetchall()
+        return [
+            {
+                "version": row["version"],
+                "payload": json.loads(row["payload"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
     def create_drawing(
         self,
         project_id: str,
