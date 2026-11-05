@@ -65,6 +65,7 @@ def compare_dxf_civil_takeoff(
         if item.get("layer") is not None
     }
     native_layer_names = {item.get("layer") for item in native_layers}
+    has_inserts = any(item.get("entity_type") == "INSERT" for item in native_measurements)
     all_layers = sorted(native_layer_names | set(external_layers), key=lambda item: str(item).casefold())
     layer_results = []
 
@@ -121,14 +122,20 @@ def compare_dxf_civil_takeoff(
             metrics = [
                 _compare_metric(
                     "linear_length", native_linear, external_linear,
-                    comparable=not has_bulge,
+                    comparable=not has_bulge and not has_inserts,
                 ),
                 _compare_metric(
                     "closed_polyline_area", native_polyline_area, external_polyline_area,
-                    comparable=not has_bulge,
+                    comparable=not has_bulge and not has_inserts,
                 ),
-                _compare_metric("circle_area", native_circle_area, external_circle_area),
-                _compare_metric("block_insert_count", native_block_count, external_block_count),
+                _compare_metric(
+                    "circle_area", native_circle_area, external_circle_area,
+                    comparable=not has_inserts,
+                ),
+                _compare_metric(
+                    "block_insert_count", native_block_count, external_block_count,
+                    comparable=not has_inserts,
+                ),
             ]
         layer_results.append({
             "layer": layer,
@@ -152,6 +159,7 @@ def compare_dxf_civil_takeoff(
         "rules": [
             "No averaging or automatic replacement of native values.",
             "Polyline length/area is not compared when bulge segments are present.",
+            "Metrics are withheld when INSERT entities may change block expansion scope.",
             "HATCH bbox proxy area is excluded from all comparisons.",
             "All differences require drawing-level human review.",
         ],
