@@ -78,7 +78,15 @@ def _segment_area_correction(a: tuple[float, float], b: tuple[float, float],
     return 0.5 * radius * radius * (theta - math.sin(theta))
 
 
+def _is_horizontal_plane(entity: Any) -> bool:
+    normal = entity.dxf.get("extrusion", (0.0, 0.0, 1.0))
+    nx, ny, nz = float(normal[0]), float(normal[1]), float(normal[2])
+    return abs(nx) < 1e-9 and abs(ny) < 1e-9 and abs(abs(nz) - 1.0) < 1e-9
+
+
 def _polyline_vertices(entity: Any) -> tuple[list[tuple[float, float, float]], bool]:
+    if not _is_horizontal_plane(entity):
+        return [], False
     if entity.dxftype() == "LWPOLYLINE":
         vertices = [(float(x), float(y), float(b)) for x, y, b in entity.get_points("xyb")]
         return vertices, bool(entity.closed)
@@ -218,14 +226,22 @@ def analyze_dxf_geometry(
             radius = float(entity.dxf.radius)
             length, area = 2.0 * math.pi * radius, math.pi * radius * radius
             add_measurement(entity, "length", length, "2*pi*radius")
-            add_measurement(entity, "area", area, "pi*radius^2")
             bucket["linear_length"] += length
-            bucket["closed_area"] += area
+            if _is_horizontal_plane(entity):
+                add_measurement(entity, "area", area, "pi*radius^2")
+                bucket["closed_area"] += area
+            else:
+                warnings.append(f"NON_HORIZONTAL_CIRCLE_AREA_WITHHELD:{handle}")
         elif kind in {"LWPOLYLINE", "POLYLINE"}:
             length, area, supported = _polyline_geometry(entity)
             if not supported:
                 unsupported[kind] += 1
-                warnings.append(f"UNSUPPORTED_POLYLINE_GEOMETRY:{handle}")
+                reason = (
+                    "NON_HORIZONTAL_POLYLINE_NOT_MEASURED"
+                    if not _is_horizontal_plane(entity)
+                    else "UNSUPPORTED_POLYLINE_GEOMETRY"
+                )
+                warnings.append(f"{reason}:{handle}")
                 continue
             add_measurement(entity, "length", length, "sum(straight_chords_and_bulge_arc_lengths)")
             bucket["linear_length"] += length
