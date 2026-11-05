@@ -72,6 +72,15 @@ def list_project_layer_mappings(project_id: str) -> dict:
     return {"project_id": project_id, "mappings": repository.list_project_layer_mappings(project_id)}
 
 
+@router.get(
+    "/projects/{project_id}/drawings/mappings/{rule_id}/history", tags=["drawings"]
+)
+def list_project_layer_mapping_history(project_id: str, rule_id: str) -> list[dict]:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return repository.list_project_layer_mapping_history(project_id, rule_id)
+
+
 @router.post("/projects/{project_id}/drawings/mappings", tags=["drawings"])
 def save_project_layer_mapping(project_id: str, payload: ProjectLayerMapping) -> dict:
     if repository.get_project(project_id) is None:
