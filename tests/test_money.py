@@ -1,4 +1,5 @@
 from decimal import Decimal
+
 from auditos.audit_engine.money import amount_difference, calculate_amount
 
 
