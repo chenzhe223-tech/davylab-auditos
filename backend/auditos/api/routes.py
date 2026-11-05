@@ -19,7 +19,6 @@ from auditos.drawings.crosscheck import (
     compare_dxf_civil_takeoff,
 )
 from auditos.drawings.geometry import analyze_dxf_geometry, extract_entity_geometry
-from auditos.drawings.revisions import compare_drawing_revision_reports
 from auditos.drawings.mapping import (
     build_mapped_takeoff_candidates,
     get_mapping_templates,
@@ -32,6 +31,7 @@ from auditos.drawings.models import (
     ProjectLayerMapping,
     TakeoffRequest,
 )
+from auditos.drawings.revisions import compare_drawing_revision_reports
 from auditos.drawings.router import classify_task
 from auditos.drawings.service import engine_capabilities, plan_takeoff
 from auditos.ingestion.settlement_xlsx import read_settlement_xlsx
