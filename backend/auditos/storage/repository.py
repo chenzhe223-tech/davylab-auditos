@@ -80,8 +80,62 @@ class ProjectRepository:
                     report_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS project_layer_mappings (
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    rule_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, rule_id)
+                );
+                CREATE TABLE IF NOT EXISTS project_layer_mapping_history (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    rule_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
             """)
 
+
+
+    def save_project_layer_mapping(
+        self, project_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        rule_id = str(payload["rule_id"])
+        now = utc_now().isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT version, created_at FROM project_layer_mappings "
+                "WHERE project_id = ? AND rule_id = ?",
+                (project_id, rule_id),
+            ).fetchone()
+            version = int(row["version"]) + 1 if row else 1
+            created_at = row["created_at"] if row else now
+            stored = {**payload, "version": version, "source": "project_custom", "status": "active"}
+            serialized = json.dumps(stored, ensure_ascii=False)
+            connection.execute(
+                "INSERT INTO project_layer_mappings VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(project_id, rule_id) DO UPDATE SET "
+                "version=excluded.version, payload=excluded.payload, updated_at=excluded.updated_at",
+                (project_id, rule_id, version, serialized, created_at, now),
+            )
+            connection.execute(
+                "INSERT INTO project_layer_mapping_history VALUES (?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), project_id, rule_id, version, serialized, now),
+            )
+        return stored
+
+    def list_project_layer_mappings(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload FROM project_layer_mappings WHERE project_id = ? "
+                "ORDER BY rule_id",
+                (project_id,),
+            ).fetchall()
+        return [json.loads(row["payload"]) for row in rows]
 
     def create_drawing(
         self,
