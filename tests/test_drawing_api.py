@@ -95,6 +95,14 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     assert mapped["evidence_handles"]
     assert len(run["report"]["measurements"]) == 1
     assert run["report"]["measurements"][0]["entity_handle"]
+    entity_handle = run["report"]["measurements"][0]["entity_handle"]
+    entity_detail = client.get(
+        f"/api/projects/{project.id}/drawings/{drawing['id']}/runs/{run['id']}/entities/{entity_handle}"
+    )
+    assert entity_detail.status_code == 200
+    assert entity_detail.json()["entity"]["entity_type"] == "LINE"
+    assert entity_detail.json()["entity"]["geometry"]["end"] == [2000.0, 0.0, 0.0]
+    assert entity_detail.json()["requires_visual_review"] is True
 
     history = client.get(
         f"/api/projects/{project.id}/drawings/{drawing['id']}/runs"
