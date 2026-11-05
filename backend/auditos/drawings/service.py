@@ -5,6 +5,7 @@ from uuid import uuid4
 from auditos.drawings.adapters import (
     CadAiAgentAdapter,
     DwgReaderAdapter,
+    NativeDxfGeometryAdapter,
     DxfCivilAdapter,
 )
 from auditos.drawings.models import (
@@ -46,6 +47,7 @@ def inspect_drawing_file(path: Path) -> dict:
 
 def engine_capabilities() -> list[EngineCapability]:
     return [
+        NativeDxfGeometryAdapter().probe(),
         DwgReaderAdapter().probe(),
         CadAiAgentAdapter().probe(),
         DxfCivilAdapter().probe(),
