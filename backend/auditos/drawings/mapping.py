@@ -22,6 +22,7 @@ class LayerMappingRule(BaseModel):
     notes: str
     status: str = "template_needs_confirmation"
     source: str = "DAVYLAB_TEMPLATE_NOT_A_STATUTORY_STANDARD"
+    version: int | None = None
 
 
 RULES = [
@@ -147,17 +148,27 @@ def get_mapping_templates(discipline: str | None = None) -> list[dict[str, Any]]
 
 
 def suggest_layer_mappings(
-    layer_names: list[str], discipline: str = "all"
+    layer_names: list[str],
+    discipline: str = "all",
+    custom_rules: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     suggestions = []
+    project_rules = [LayerMappingRule.model_validate(rule) for rule in (custom_rules or [])]
     for layer in sorted(set(layer_names), key=str.casefold):
         normalized = layer.casefold()
         matches = [
-            rule for rule in RULES
+            rule for rule in project_rules
             if (discipline == "all" or rule.discipline == discipline)
             and any(fnmatch.fnmatchcase(normalized, pattern.casefold())
                     for pattern in rule.layer_patterns)
         ]
+        if not matches:
+            matches = [
+                rule for rule in RULES
+                if (discipline == "all" or rule.discipline == discipline)
+                and any(fnmatch.fnmatchcase(normalized, pattern.casefold())
+                        for pattern in rule.layer_patterns)
+            ]
         if not matches:
             suggestions.append({
                 "layer": layer,
