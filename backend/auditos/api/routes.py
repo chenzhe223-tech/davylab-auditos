@@ -126,6 +126,89 @@ def list_project_drawing_revision_comparisons(project_id: str) -> list[dict]:
     return repository.list_drawing_revision_comparisons(project_id)
 
 
+@router.get(
+    "/projects/{project_id}/drawings/revision-comparisons/{comparison_id}/export.xlsx",
+    tags=["reports"],
+)
+def export_drawing_revision_comparison(project_id: str, comparison_id: str) -> StreamingResponse:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    comparison = repository.get_drawing_revision_comparison(comparison_id, project_id)
+    if comparison is None:
+        raise HTTPException(status_code=404, detail="Revision comparison not found")
+
+    report = comparison["report"]
+    workbook = Workbook()
+    summary_sheet = workbook.active
+    summary_sheet.title = "修订差异"
+    summary_sheet.append(["字段", "值"])
+    for key, value in [
+        ("对比ID", comparison_id),
+        ("基准修订", report.get("base_revision")),
+        ("目标修订", report.get("target_revision")),
+        ("基准图纸SHA-256", report.get("base_drawing_sha256")),
+        ("目标图纸SHA-256", report.get("target_drawing_sha256")),
+        ("基准单位", report.get("base_source_unit")),
+        ("目标单位", report.get("target_source_unit")),
+        ("基准总长度(m)", report.get("totals", {}).get("base_linear_length_m")),
+        ("目标总长度(m)", report.get("totals", {}).get("target_linear_length_m")),
+        ("长度变化(m)", report.get("totals", {}).get("delta_linear_length_m")),
+        ("基准闭合面积(m²)", report.get("totals", {}).get("base_closed_area_m2")),
+        ("目标闭合面积(m²)", report.get("totals", {}).get("target_closed_area_m2")),
+        ("面积变化(m²)", report.get("totals", {}).get("delta_closed_area_m2")),
+        ("新增图层", report.get("summary", {}).get("added_layers")),
+        ("删除图层", report.get("summary", {}).get("removed_layers")),
+        ("变化图层", report.get("summary", {}).get("changed_layers")),
+        ("未变化图层", report.get("summary", {}).get("unchanged_layers")),
+    ]:
+        summary_sheet.append([key, str(value) if value is not None else None])
+
+    layer_sheet = workbook.create_sheet("图层明细")
+    layer_sheet.append([
+        "图层", "状态", "基准长度(m)", "目标长度(m)", "长度变化(m)",
+        "基准面积(m²)", "目标面积(m²)", "面积变化(m²)",
+        "基准实体数", "目标实体数", "实体数变化", "块数量变化",
+    ])
+    for item in report.get("layers", []):
+        layer_sheet.append([
+            item.get("layer"), item.get("status"),
+            str(item.get("base_linear_length_m")),
+            str(item.get("target_linear_length_m")),
+            str(item.get("delta_linear_length_m")),
+            str(item.get("base_closed_area_m2")),
+            str(item.get("target_closed_area_m2")),
+            str(item.get("delta_closed_area_m2")),
+            item.get("base_entity_count"), item.get("target_entity_count"),
+            item.get("delta_entity_count"),
+            "; ".join(f"{name}: {delta}" for name, delta in item.get("delta_block_counts", {}).items()),
+        ])
+
+    notes_sheet = workbook.create_sheet("复核提示")
+    notes_sheet.append(["说明"])
+    for note in report.get("limitations", []):
+        notes_sheet.append([note])
+
+    for sheet in workbook.worksheets:
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for column in sheet.columns:
+            letter = column[0].column_letter
+            longest = max(len(str(cell.value or "")) for cell in column)
+            sheet.column_dimensions[letter].width = min(max(longest + 2, 12), 56)
+
+    with tempfile.SpooledTemporaryFile() as output:
+        workbook.save(output)
+        output.seek(0)
+        content = output.read()
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="auditos-revision-{comparison_id}.xlsx"'
+        },
+    )
+
+
 @router.get("/drawings/mapping-templates", tags=["drawings"])
 def list_drawing_mapping_templates(discipline: str = "all") -> dict:
     return {
