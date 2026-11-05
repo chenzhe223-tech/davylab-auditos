@@ -1,5 +1,8 @@
+from io import BytesIO
+
 import ezdxf
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from auditos.api import routes
 from auditos.domain.models import ProjectCreate
@@ -98,3 +101,12 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     )
     assert history.status_code == 200
     assert len(history.json()) == 1
+
+    exported = client.get(
+        f"/api/projects/{project.id}/drawings/{drawing['id']}/runs/{run['id']}/export.xlsx"
+    )
+    assert exported.status_code == 200
+    workbook = load_workbook(BytesIO(exported.content), read_only=True)
+    assert workbook.sheetnames == ["算量候选", "实体证据", "图层映射", "运行信息"]
+    assert workbook["算量候选"]["D2"].value == "2.0"
+    assert workbook["实体证据"]["A2"].value
