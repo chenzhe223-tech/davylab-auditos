@@ -59,9 +59,19 @@ def plan_takeoff(request: TakeoffRequest) -> dict:
     capabilities = {item.engine_id: item for item in engine_capabilities()}
     selected = [decision.primary_engine, *decision.secondary_engines]
     engine_status = [capabilities[item] for item in selected if item in capabilities]
+    primary = capabilities.get(decision.primary_engine)
+    primary_ready = bool(
+        primary
+        and primary.installed
+        and decision.task in primary.available_tasks
+    )
     return {
         "decision": decision,
         "engine_status": engine_status,
-        "ready": bool(engine_status and capabilities[decision.primary_engine].installed),
-        "notice": "当前返回的是引擎路由建议；只有安装并通过预检的引擎才能执行。算量候选必须人工复核。",
+        "ready": primary_ready,
+        "notice": (
+            "主引擎已安装且支持当前任务；这只是可执行性预检，不代表已完成算量。"
+            if primary_ready else
+            "主引擎未安装或未声明支持当前任务；请先完成引擎配置。算量结果仍需人工复核。"
+        ),
     }
