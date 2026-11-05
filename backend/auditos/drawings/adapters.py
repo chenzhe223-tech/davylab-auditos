@@ -126,11 +126,29 @@ class DwgReaderAdapter(EngineAdapter):
         if not capability.installed or not capability.executable:
             raise RuntimeError("dwg-reader engine is not installed")
         output_dir.mkdir(parents=True, exist_ok=True)
+        source = Path(drawing_path)
+
+        # Convert DWG into the isolated run directory. The upstream converter
+        # writes <stem>.dxf there and returns a JSON conversion summary.
+        if source.suffix.lower() == ".dwg":
+            conversion = self._run([
+                capability.executable, "convert", str(source), str(output_dir)
+            ], timeout=600)
+            if conversion.returncode != 0:
+                raise RuntimeError(
+                    f"DWG conversion failed ({conversion.returncode}): {conversion.stderr[-3000:]}"
+                )
+            converted = output_dir / f"{source.stem}.dxf"
+            if not converted.is_file() or converted.stat().st_size == 0:
+                raise RuntimeError("dwg-reader conversion did not produce a non-empty DXF.")
+            source = converted
+        elif source.suffix.lower() != ".dxf":
+            raise ValueError("dwg-reader adapter accepts DWG or DXF only")
 
         if task in {DrawingTask.STRUCTURE_SUMMARY, DrawingTask.TEXT_DIMENSIONS}:
             command = [
-                capability.executable, "read", str(drawing_path),
-                "--format", "json", "--entities",
+                capability.executable, "read", str(source),
+                "--format", "json", "--entities", "--no-convert",
             ]
             if task == DrawingTask.TEXT_DIMENSIONS:
                 command.append("--dimensions")
@@ -141,10 +159,10 @@ class DwgReaderAdapter(EngineAdapter):
             sections = "components" if task == DrawingTask.BLOCK_COUNT else "layers,dimensions"
             result_file = output_dir / f"dwg-reader-{task.value}.csv"
             command = [
-                capability.executable, "quantity", str(drawing_path),
-                "--output", str(result_file), "--sections", sections,
+                capability.executable, "quantity", str(source),
+                "--output", str(result_file), "--sections", sections, "--no-convert",
             ]
-        completed = self._run(command)
+        completed = self._run(command, timeout=600)
         if completed.returncode != 0:
             raise RuntimeError(
                 f"dwg-reader failed ({completed.returncode}): {completed.stderr[-3000:]}"
@@ -156,10 +174,12 @@ class DwgReaderAdapter(EngineAdapter):
             "returncode": completed.returncode,
             "stdout": completed.stdout[-8000:],
             "stderr": completed.stderr[-8000:],
+            "converted_dxf": str(source) if source != drawing_path else None,
             "output_file": str(result_file) if result_file and result_file.is_file() else None,
             "candidate_only": True,
-            "note": "DWG Reader results must be re-measured and linked to entity-level evidence by AuditOS.",
+            "note": "DWG Reader output is a candidate; AuditOS must re-measure geometry and attach entity evidence.",
         }
+
 
 
 class CadAiAgentAdapter(EngineAdapter):
