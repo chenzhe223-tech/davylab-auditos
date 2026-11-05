@@ -15,7 +15,7 @@ from auditos.domain.models import ProjectCreate, ProjectRead
 from auditos.drawings.adapters import DwgReaderAdapter
 from auditos.drawings.geometry import analyze_dxf_geometry
 from auditos.drawings.mapping import get_mapping_templates, suggest_layer_mappings
-from auditos.drawings.models import DrawingAnalysisRequest, TakeoffRequest
+from auditos.drawings.models import DrawingAnalysisRequest, ProjectLayerMapping, TakeoffRequest
 from auditos.drawings.router import classify_task
 from auditos.drawings.service import engine_capabilities, plan_takeoff
 from auditos.ingestion.settlement_xlsx import read_settlement_xlsx
@@ -63,6 +63,22 @@ def list_drawing_mapping_templates(discipline: str = "all") -> dict:
         "templates": get_mapping_templates(discipline),
         "notice": "模板仅用于图层识别建议，不代表国家规范、地方定额或项目已确认计量规则。",
     }
+
+
+@router.get("/projects/{project_id}/drawings/mappings", tags=["drawings"])
+def list_project_layer_mappings(project_id: str) -> dict:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"project_id": project_id, "mappings": repository.list_project_layer_mappings(project_id)}
+
+
+@router.post("/projects/{project_id}/drawings/mappings", tags=["drawings"])
+def save_project_layer_mapping(project_id: str, payload: ProjectLayerMapping) -> dict:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return repository.save_project_layer_mapping(
+        project_id, payload.model_dump(mode="json")
+    )
 
 
 @router.post("/projects/{project_id}/drawings/plan", tags=["drawings"])
@@ -175,7 +191,9 @@ def analyze_uploaded_drawing(
     report["drawing_revision"] = drawing.get("revision")
     report["task"] = task.value if hasattr(task, "value") else str(task)
     report["mapping_suggestions"] = suggest_layer_mappings(
-        [item["layer"] for item in report["layers"]], payload.discipline
+        [item["layer"] for item in report["layers"]],
+        payload.discipline,
+        repository.list_project_layer_mappings(project_id),
     )
     if conversion_result:
         report["conversion"] = {
