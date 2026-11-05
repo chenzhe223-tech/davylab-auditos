@@ -60,7 +60,110 @@ class ProjectRepository:
                     note TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS drawings (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    filename TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    stored_path TEXT NOT NULL,
+                    revision TEXT,
+                    source_unit TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS drawing_runs (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    task TEXT NOT NULL,
+                    engine_id TEXT NOT NULL,
+                    report_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
             """)
+
+
+    def create_drawing(
+        self,
+        project_id: str,
+        filename: str,
+        sha256: str,
+        size_bytes: int,
+        stored_path: str,
+        revision: str | None = None,
+        source_unit: str | None = None,
+    ) -> dict[str, Any]:
+        drawing_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawings VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (drawing_id, project_id, filename, sha256, size_bytes, stored_path,
+                 revision, source_unit, created_at),
+            )
+        return {
+            "id": drawing_id, "project_id": project_id, "filename": filename,
+            "sha256": sha256, "size_bytes": size_bytes, "revision": revision,
+            "source_unit": source_unit, "created_at": created_at,
+        }
+
+    def get_drawing(self, drawing_id: str, project_id: str | None = None) -> dict[str, Any] | None:
+        query = "SELECT * FROM drawings WHERE id = ?"
+        params: tuple[Any, ...] = (drawing_id,)
+        if project_id is not None:
+            query += " AND project_id = ?"
+            params = (drawing_id, project_id)
+        with self._connect() as connection:
+            row = connection.execute(query, params).fetchone()
+        return dict(row) if row else None
+
+    def list_drawings(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, project_id, filename, sha256, size_bytes, revision, source_unit, created_at "
+                "FROM drawings WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_drawing_run(
+        self,
+        project_id: str,
+        drawing_id: str,
+        task: str,
+        engine_id: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        run_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawing_runs VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (run_id, project_id, drawing_id, task, engine_id,
+                 json.dumps(report, ensure_ascii=False, default=str), created_at),
+            )
+        return {
+            "id": run_id, "project_id": project_id, "drawing_id": drawing_id,
+            "task": task, "engine_id": engine_id, "created_at": created_at,
+            "report": report,
+        }
+
+    def list_drawing_runs(self, drawing_id: str, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM drawing_runs WHERE drawing_id = ? AND project_id = ? "
+                "ORDER BY created_at DESC",
+                (drawing_id, project_id),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"], "project_id": row["project_id"],
+                "drawing_id": row["drawing_id"], "task": row["task"],
+                "engine_id": row["engine_id"], "report": json.loads(row["report_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def create_project(self, payload: ProjectCreate) -> ProjectRead:
         project_id = str(uuid.uuid4())
