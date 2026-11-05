@@ -24,7 +24,12 @@ from auditos.drawings.mapping import (
     get_mapping_templates,
     suggest_layer_mappings,
 )
-from auditos.drawings.models import DrawingAnalysisRequest, ProjectLayerMapping, TakeoffRequest
+from auditos.drawings.models import (
+    CandidateReviewRequest,
+    DrawingAnalysisRequest,
+    ProjectLayerMapping,
+    TakeoffRequest,
+)
 from auditos.drawings.router import classify_task
 from auditos.drawings.service import engine_capabilities, plan_takeoff
 from auditos.ingestion.settlement_xlsx import read_settlement_xlsx
@@ -328,6 +333,95 @@ def list_drawing_analysis_runs(project_id: str, drawing_id: str) -> list[dict]:
     if repository.get_drawing(drawing_id, project_id) is None:
         raise HTTPException(status_code=404, detail="Drawing not found in this project")
     return repository.list_drawing_runs(drawing_id, project_id)
+
+
+@router.get(
+    "/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/candidates",
+    tags=["drawings"],
+)
+def list_takeoff_candidates(project_id: str, drawing_id: str, run_id: str) -> list[dict]:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if repository.get_drawing(drawing_id, project_id) is None:
+        raise HTTPException(status_code=404, detail="Drawing not found in this project")
+    run = repository.get_drawing_run(run_id, drawing_id, project_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Drawing analysis run not found")
+    reviews = repository.list_drawing_candidate_reviews(run_id)
+    by_candidate: dict[str, list[dict]] = {}
+    for review in reviews:
+        by_candidate.setdefault(review["candidate_id"], []).append(review)
+    result = []
+    for candidate in run["report"].get("mapped_takeoff_candidates", []):
+        history = by_candidate.get(candidate["candidate_id"], [])
+        result.append({
+            **candidate,
+            "latest_review": history[0] if history else None,
+            "review_history": history,
+        })
+    return result
+
+
+@router.post(
+    "/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/candidates/{candidate_id}/review",
+    tags=["drawings"],
+)
+def review_takeoff_candidate(
+    project_id: str,
+    drawing_id: str,
+    run_id: str,
+    candidate_id: str,
+    payload: CandidateReviewRequest,
+) -> dict:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if repository.get_drawing(drawing_id, project_id) is None:
+        raise HTTPException(status_code=404, detail="Drawing not found in this project")
+    run = repository.get_drawing_run(run_id, drawing_id, project_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Drawing analysis run not found")
+    candidate = next(
+        (item for item in run["report"].get("mapped_takeoff_candidates", [])
+         if item.get("candidate_id") == candidate_id),
+        None,
+    )
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Takeoff candidate not found")
+
+    original_quantity = candidate.get("quantity")
+    reviewed_quantity = None
+    if payload.decision in {"confirmed", "adjusted"}:
+        if candidate.get("status") != "candidate_for_human_review" or original_quantity is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Only numeric candidates with confirmed mapping and units can be confirmed or adjusted.",
+            )
+        if payload.decision == "confirmed":
+            reviewed_quantity = str(original_quantity)
+        else:
+            if payload.reviewed_quantity is None or len(payload.note.strip()) < 3:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Adjusted quantity requires a non-negative value and an explanation.",
+                )
+            reviewed_quantity = str(payload.reviewed_quantity)
+    elif payload.reviewed_quantity is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Rejected candidates cannot carry a reviewed quantity.",
+        )
+
+    return repository.create_drawing_candidate_review(
+        project_id=project_id,
+        drawing_id=drawing_id,
+        run_id=run_id,
+        candidate_id=candidate_id,
+        decision=payload.decision,
+        original_quantity=str(original_quantity) if original_quantity is not None else None,
+        reviewed_quantity=reviewed_quantity,
+        note=payload.note.strip(),
+        reviewer=payload.reviewer,
+    )
 
 
 @router.get(
