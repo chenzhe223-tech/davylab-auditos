@@ -2,8 +2,8 @@ import hashlib
 import subprocess
 import tempfile
 from pathlib import Path
-from uuid import uuid4
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
