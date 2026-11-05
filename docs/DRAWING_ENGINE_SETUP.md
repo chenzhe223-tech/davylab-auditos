@@ -77,6 +77,7 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 - `GET /api/projects/{project_id}/drawings`：查看项目图纸。
 - `POST /api/projects/{project_id}/drawings/compare-revisions`：比较两个 DXF 修订版的图层工程量差异。
 - `GET /api/projects/{project_id}/drawings/revision-comparisons`：读取项目历史修订对比。
+- `GET /api/projects/{project_id}/drawings/revision-comparisons/{comparison_id}/export.xlsx`：导出修订差异工作簿。
 - `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期长度、闭合面积或块数分析。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：查看算量历史和证据。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出候选工程量、实体证据、映射状态和运行信息工作簿。
