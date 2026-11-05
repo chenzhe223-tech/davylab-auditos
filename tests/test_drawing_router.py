@@ -24,7 +24,8 @@ def test_dxf_area_routes_to_visual_civil_engine():
     decision = route_drawing_task(TakeoffRequest(
         filename="floor-plan.dxf", task_description="计算闭合房间面积"
     ))
-    assert decision.primary_engine == EngineId.DXF_CIVIL
+    assert decision.primary_engine == EngineId.NATIVE
+    assert EngineId.DXF_CIVIL in decision.secondary_engines
     assert decision.requires_visual_review
     assert any("近似包围盒" in item for item in decision.safety_constraints)
 
@@ -38,3 +39,13 @@ def test_drawing_file_guards(tmp_path):
     empty.write_bytes(b"")
     with pytest.raises(ValueError):
         inspect_drawing_file(empty)
+
+
+
+def test_dxf_linear_takeoff_uses_native_geometry_first():
+    decision = route_drawing_task(TakeoffRequest(
+        filename="cable-tray.dxf", task_description="统计电缆桥架长度"
+    ))
+    assert decision.primary_engine == EngineId.NATIVE
+    assert EngineId.DWG_READER in decision.secondary_engines
+    assert decision.requires_human_review
