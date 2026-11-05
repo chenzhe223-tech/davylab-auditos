@@ -1,5 +1,5 @@
-from auditos.drawings.mapping import get_mapping_templates, suggest_layer_mappings
 from auditos.domain.models import ProjectCreate
+from auditos.drawings.mapping import get_mapping_templates, suggest_layer_mappings
 from auditos.storage.repository import ProjectRepository
 
 
