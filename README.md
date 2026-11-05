@@ -48,6 +48,7 @@ uvicorn auditos.main:app --reload
 - `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期几何分析。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：读取分析历史。
 - `GET /api/drawings/mapping-templates`：查看安装专业图层映射模板。
+- `GET/POST /api/projects/{project_id}/drawings/mappings`：维护项目自定义映射，自动版本化。
 
 图纸算量边界：原生内核当前只处理模型空间 XY 平面中已支持的几何；单位未知时不换算；HATCH、Xref、嵌套块、3D 实体及安装工程竖向段/管件/损耗规则尚未纳入正式计量。映射模板仅为候选建议，不能直接作为国家规范、地方定额或项目规则依据。
 
