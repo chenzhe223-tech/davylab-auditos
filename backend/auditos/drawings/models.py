@@ -112,6 +112,7 @@ class DrawingAnalysisRequest(BaseModel):
     discipline: str = Field(default="all", max_length=40)
     layer_patterns: list[str] = Field(default_factory=list, max_length=100)
     source_unit_override: str | None = Field(default=None, max_length=40)
+    include_external_crosschecks: bool = True
 
 
 
