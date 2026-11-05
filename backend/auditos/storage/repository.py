@@ -245,6 +245,24 @@ class ProjectRepository:
             "created_at": created_at,
         }
 
+    def get_drawing_revision_comparison(
+        self, comparison_id: str, project_id: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM drawing_revision_comparisons WHERE id = ? AND project_id = ?",
+                (comparison_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"], "project_id": row["project_id"],
+            "base_drawing_id": row["base_drawing_id"],
+            "target_drawing_id": row["target_drawing_id"],
+            "report": json.loads(row["report_json"]),
+            "created_at": row["created_at"],
+        }
+
     def list_drawing_revision_comparisons(self, project_id: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
