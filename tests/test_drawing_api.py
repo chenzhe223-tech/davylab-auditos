@@ -208,6 +208,15 @@ def test_revision_comparison_normalizes_units_and_persists_report(tmp_path):
     assert history.status_code == 200
     assert len(history.json()) == 1
 
+    comparison_id = compared.json()["id"]
+    exported = client.get(
+        f"/api/projects/{project.id}/drawings/revision-comparisons/{comparison_id}/export.xlsx"
+    )
+    assert exported.status_code == 200
+    workbook = load_workbook(BytesIO(exported.content), read_only=True)
+    assert workbook.sheetnames == ["修订差异", "图层明细", "复核提示"]
+    assert float(workbook["图层明细"]["E2"].value) == 0.5
+
 
 def test_revision_comparison_blocks_unknown_units_for_linear_geometry(tmp_path):
     routes.repository = ProjectRepository(tmp_path / "revision-unknown.sqlite3")
