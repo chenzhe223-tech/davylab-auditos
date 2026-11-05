@@ -59,10 +59,6 @@ def _unit_info(doc: Any, override: str | None) -> tuple[str | None, Decimal | No
     return SUPPORTED_UNITS.get(code, (None, None))
 
 
-def _xy(point: Any) -> tuple[float, float]:
-    return float(point[0]), float(point[1])
-
-
 def _segment_length(a: tuple[float, float], b: tuple[float, float], bulge: float) -> float:
     chord = math.hypot(b[0] - a[0], b[1] - a[1])
     if chord == 0 or abs(bulge) < 1e-12:
@@ -175,13 +171,17 @@ def analyze_dxf_geometry(
         handle = str(entity.dxf.handle)
         raw = _decimal(value)
         normalized = raw * to_meters if to_meters is not None else None
+        raw_unit = (
+            f"{source_unit}2" if kind == "area" and source_unit
+            else source_unit or "unitless_or_unknown"
+        )
         measurements.append({
             "entity_handle": handle,
             "entity_type": entity.dxftype(),
             "layer": layer,
             "measurement_kind": kind,
             "raw_value": raw,
-            "source_unit": source_unit or "unitless_or_unknown",
+            "source_unit": raw_unit,
             "normalized_value": normalized,
             "normalized_unit": ("m" if kind == "length" else "m2") if normalized is not None else None,
             "formula": formula,
@@ -246,6 +246,10 @@ def analyze_dxf_geometry(
             })
         elif kind in {"DIMENSION", "HATCH", "SPLINE", "ELLIPSE", "RAY", "XLINE"}:
             unsupported[kind] += 1
+            if kind == "HATCH":
+                warnings.append(f"HATCH_AREA_NOT_MEASURED:{handle}")
+            elif kind == "DIMENSION":
+                warnings.append(f"DIMENSION_ANNOTATION_NOT_COUNTED_AS_GEOMETRY:{handle}")
         else:
             unsupported[kind] += 1
 
@@ -280,7 +284,7 @@ def analyze_dxf_geometry(
             "linear_length_unit": source_unit or "unitless_or_unknown",
             "linear_length_m": raw_length * to_meters if to_meters is not None else None,
             "closed_area_raw": raw_area,
-            "closed_area_unit": source_unit or "unitless_or_unknown",
+            "closed_area_unit": f"{source_unit}2" if source_unit else "unitless_or_unknown",
             "closed_area_m2": raw_area * to_meters * to_meters if to_meters is not None else None,
             "block_counts": dict(bucket["block_counts"]),
         })
