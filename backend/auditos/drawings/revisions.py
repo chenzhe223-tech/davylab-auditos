@@ -276,6 +276,8 @@ def compare_dxf_entity_revisions(
             pair_count = min(len(old_matches), len(new_matches))
             counts["unchanged_geometry_handle_changed"] += pair_count
             for before, after in zip(old_matches[:pair_count], new_matches[:pair_count], strict=False):
+                old.pop(before["handle"], None)
+                new.pop(after["handle"], None)
                 changes.append({
                     "layer": layer, "status": "unchanged_geometry_handle_changed",
                     "base_handle": before["handle"], "target_handle": after["handle"],
