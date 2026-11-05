@@ -196,7 +196,10 @@ def analyze_dxf_geometry(
         layer = str(entity.dxf.layer)
         handle = str(entity.dxf.handle)
         raw = _decimal(value)
-        normalized = raw * to_meters if to_meters is not None else None
+        normalized = (
+            raw * (to_meters * to_meters if kind == "area" else to_meters)
+            if to_meters is not None else None
+        )
         raw_unit = (
             f"{source_unit}2" if kind == "area" and source_unit
             else source_unit or "unitless_or_unknown"
