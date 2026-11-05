@@ -1,7 +1,10 @@
 from pathlib import Path
 
 from auditos.drawings.models import (
-    DrawingRouteDecision, DrawingTask, EngineId, TakeoffRequest,
+    DrawingRouteDecision,
+    DrawingTask,
+    EngineId,
+    TakeoffRequest,
 )
 
 
@@ -34,14 +37,14 @@ def route_drawing_task(request: TakeoffRequest) -> DrawingRouteDecision:
         "必须保留图纸哈希、修订版本、图层和实体来源定位。",
         "任何单位/比例未确认时，不允许输出可用于结算的标准化工程量。",
     ]
-
     if extension == ".dwg":
         primary = EngineId.DWG_READER
         reasons.append("DWG 需先经过本地 ODA 转换，再进行结构解析。")
-        if task in {DrawingTask.AREA_TAKEOFF, DrawingTask.LINEAR_TAKEOFF, DrawingTask.COMPLEX_ANALYSIS}:
-            secondary = [EngineId.CAD_AI_AGENT, EngineId.DXF_CIVIL]
-        else:
-            secondary = [EngineId.DXF_CIVIL]
+        secondary = (
+            [EngineId.CAD_AI_AGENT, EngineId.DXF_CIVIL]
+            if task in {DrawingTask.AREA_TAKEOFF, DrawingTask.LINEAR_TAKEOFF, DrawingTask.COMPLEX_ANALYSIS}
+            else [EngineId.DXF_CIVIL]
+        )
     elif extension == ".dxf":
         if task in {DrawingTask.SPATIAL_REVIEW, DrawingTask.VISUAL_REVIEW, DrawingTask.AREA_TAKEOFF}:
             primary = EngineId.DXF_CIVIL
@@ -56,14 +59,12 @@ def route_drawing_task(request: TakeoffRequest) -> DrawingRouteDecision:
         primary = EngineId.NATIVE
         secondary = []
         reasons.append("当前适配器仅接受 DWG/DXF；PDF/图片需后续独立矢量/栅格流程。")
-
     if not reasons:
         reasons.append(f"依据文件格式 {extension} 和任务类型 {task.value} 选择引擎。")
     if task == DrawingTask.AREA_TAKEOFF:
         constraints.append("面积任务优先采用精确闭合边界算法；HATCH/包围盒/栅格推断标记为 approximate。")
     if task in {DrawingTask.LINEAR_TAKEOFF, DrawingTask.AREA_TAKEOFF}:
         constraints.append("交叉引擎结果只用于差异定位，不可简单平均。")
-
     return DrawingRouteDecision(
         task=task, primary_engine=primary, secondary_engines=secondary,
         reasons=reasons, safety_constraints=constraints,
