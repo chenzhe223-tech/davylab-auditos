@@ -75,6 +75,8 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 - `GET /api/drawings/engines`：查看本机引擎能力。
 - `POST /api/projects/{project_id}/drawings/upload`：multipart 上传 DWG/DXF；可传 `revision` 和 `source_unit`。
 - `GET /api/projects/{project_id}/drawings`：查看项目图纸。
+- `POST /api/projects/{project_id}/drawings/compare-revisions`：比较两个 DXF 修订版的图层工程量差异。
+- `GET /api/projects/{project_id}/drawings/revision-comparisons`：读取项目历史修订对比。
 - `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期长度、闭合面积或块数分析。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：查看算量历史和证据。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出候选工程量、实体证据、映射状态和运行信息工作簿。
@@ -114,6 +116,8 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 项目映射优先于通用模板，但依然标记为待确认；修改同一 `rule_id` 会创建新版本，不会把它变成正式定额规则。建议器还会将规则预期实体类型与图纸实际实体类型对照；例如文字层命中管线规则时会标记实体类型不匹配，不会静默采用。
 
 分析结果中的 `mapped_takeoff_candidates` 会按映射规则聚合长度/面积/块数，并保留实体 Handle。存在歧义、实体类型不匹配或单位未知时，不生成数值；可生成数值的结果也只标记为 `candidate_for_human_review`，不等于已确认清单量。
+
+修订对比目前仅接受 DXF，按图层比较标准化长度、闭合面积、块数量和实体数量；单位未知且存在长度/面积时会阻断比较。图层改名会显示为旧图层移除、新图层新增；当前不做跨修订实体身份匹配，也不自动生成变更签证或结算审减结论。
 
 人工复核采用追加式记录：`confirmed` 保留原始候选量，`adjusted` 记录人工调整量及说明，`rejected` 保留驳回原因。原始几何结果不会被修改，复核历史会进入 Excel 工作簿。
 
