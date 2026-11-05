@@ -11,15 +11,17 @@ def decimal_value(value: str | float | Decimal) -> Decimal:
         raise ValueError(f"Invalid decimal value: {value!r}") from exc
 
 
-def calculate_amount(quantity: str | float | Decimal,
-                     unit_price: str | float | Decimal) -> Decimal:
+def calculate_amount(
+    quantity: str | float | Decimal, unit_price: str | float | Decimal
+) -> Decimal:
     return (decimal_value(quantity) * decimal_value(unit_price)).quantize(
         CENT, rounding=ROUND_HALF_UP
     )
 
 
-def amount_difference(declared: str | float | Decimal,
-                      calculated: str | float | Decimal) -> Decimal:
+def amount_difference(
+    declared: str | float | Decimal, calculated: str | float | Decimal
+) -> Decimal:
     return (decimal_value(declared) - decimal_value(calculated)).quantize(
         CENT, rounding=ROUND_HALF_UP
     )

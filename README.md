@@ -24,6 +24,9 @@ DAVYLAB AuditOS 是面向中国大陆工程建设市场的本地优先工程结�
 - 重复申报、缺项、异常值和合同边界线索
 - 审核台账、证据链与人工复核流程
 - XLSX 审核明细和 DOCX 审核报告
+- DWG/DXF 图纸登记、哈希追溯和修订号管理
+- DXF 原生几何候选算量：直线、圆弧、圆、多段线和顶层块插入
+- 安装专业图层映射模板建议（电气、给排水、暖通、消防）
 
 ## 技术基线
 Python 3.11+、FastAPI、Pydantic、SQLite、Decimal、openpyxl；前端后续采用 React + TypeScript。AI Provider 默认关闭，按用户授权按需启用。
@@ -39,7 +42,24 @@ uvicorn auditos.main:app --reload
 ```
 打开 http://127.0.0.1:8000/docs 。
 
+## 图纸算量 API（开发分支）
+- `GET /api/drawings/engines`：本机引擎能力探测。
+- `POST /api/projects/{project_id}/drawings/upload`：上传 DWG/DXF，登记哈希、修订号和单位。
+- `POST /api/projects/{project_id}/drawings/compare-revisions`：比较两个 DXF 修订版的图层工程量变化。
+- `GET /api/projects/{project_id}/drawings/revision-comparisons`：读取修订对比历史。
+- `GET /api/projects/{project_id}/drawings/revision-comparisons/{comparison_id}/export.xlsx`：导出修订差异工作簿。
+- `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期几何分析。
+- `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：读取分析历史。
+- `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出算量证据工作簿。
+- `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/entities/{handle}`：回查实体几何和证据。
+- `GET/POST /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/candidates`：查看并复核候选工程量。
+- `GET /api/drawings/mapping-templates`：查看安装专业图层映射模板。
+- `GET/POST /api/projects/{project_id}/drawings/mappings`：维护项目自定义映射，自动版本化。
+- `GET /api/projects/{project_id}/drawings/mappings/{rule_id}/history`：查询映射历史版本。
+
+图纸算量边界：原生内核当前只处理模型空间 XY 平面中已支持的几何；单位未知时不换算；HATCH、Xref、嵌套块、3D 实体及安装工程竖向段/管件/损耗规则尚未纳入正式计量。可选外部引擎交叉检查不会平均或覆盖原生结果；DWG Reader、CAD AI Agent、DXF Civil 仅比较口径明确的指标，bulge/HATCH 近似或可能发生块展开差异的指标会被排除。映射模板仅为候选建议，不能直接作为国家规范、地方定额或项目规则依据。
+
 ## 状态
-Phase 0 架构与 Phase 1 后端基础骨架建设中。仓库内规则和示例并非任何地区当前有效计价依据。实际项目必须先确认所在地、基准日期、合同约定和授权规则。
+Phase 0/1 后端基础能力已建立；Phase 2 图纸识读与算量正在开发，当前改动位于 Draft PR。自动化测试通过不等于已在用户本机安装三个上游引擎或完成真实工程图纸验收。仓库内规则和示例并非任何地区当前有效计价依据。实际项目必须先确认所在地、基准日期、合同约定和授权规则。
 
 采用 Apache-2.0 License。禁止提交真实合同、结算书、施工图、个人信息、商业报价、密钥或未获授权的规范/定额数据库。

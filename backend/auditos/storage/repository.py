@@ -60,7 +60,332 @@ class ProjectRepository:
                     note TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS drawings (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    filename TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    stored_path TEXT NOT NULL,
+                    revision TEXT,
+                    source_unit TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS drawing_runs (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    task TEXT NOT NULL,
+                    engine_id TEXT NOT NULL,
+                    report_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS drawing_revision_comparisons (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    base_drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    target_drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    report_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS drawing_candidate_reviews (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    drawing_id TEXT NOT NULL REFERENCES drawings(id),
+                    run_id TEXT NOT NULL REFERENCES drawing_runs(id),
+                    candidate_id TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    original_quantity TEXT,
+                    reviewed_quantity TEXT,
+                    note TEXT NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS project_layer_mappings (
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    rule_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, rule_id)
+                );
+                CREATE TABLE IF NOT EXISTS project_layer_mapping_history (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id),
+                    rule_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
             """)
+
+
+
+    def save_project_layer_mapping(
+        self, project_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        rule_id = str(payload["rule_id"])
+        now = utc_now().isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT version, created_at FROM project_layer_mappings "
+                "WHERE project_id = ? AND rule_id = ?",
+                (project_id, rule_id),
+            ).fetchone()
+            version = int(row["version"]) + 1 if row else 1
+            created_at = row["created_at"] if row else now
+            stored = {**payload, "version": version, "source": "project_custom", "status": "active"}
+            serialized = json.dumps(stored, ensure_ascii=False)
+            connection.execute(
+                "INSERT INTO project_layer_mappings VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(project_id, rule_id) DO UPDATE SET "
+                "version=excluded.version, payload=excluded.payload, updated_at=excluded.updated_at",
+                (project_id, rule_id, version, serialized, created_at, now),
+            )
+            connection.execute(
+                "INSERT INTO project_layer_mapping_history VALUES (?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), project_id, rule_id, version, serialized, now),
+            )
+        return stored
+
+    def list_project_layer_mappings(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload FROM project_layer_mappings WHERE project_id = ? "
+                "ORDER BY rule_id",
+                (project_id,),
+            ).fetchall()
+        return [json.loads(row["payload"]) for row in rows]
+
+    def list_project_layer_mapping_history(
+        self, project_id: str, rule_id: str
+    ) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT version, payload, created_at FROM project_layer_mapping_history "
+                "WHERE project_id = ? AND rule_id = ? ORDER BY version DESC",
+                (project_id, rule_id),
+            ).fetchall()
+        return [
+            {
+                "version": row["version"],
+                "payload": json.loads(row["payload"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def create_drawing(
+        self,
+        project_id: str,
+        filename: str,
+        sha256: str,
+        size_bytes: int,
+        stored_path: str,
+        revision: str | None = None,
+        source_unit: str | None = None,
+    ) -> dict[str, Any]:
+        drawing_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawings VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (drawing_id, project_id, filename, sha256, size_bytes, stored_path,
+                 revision, source_unit, created_at),
+            )
+        return {
+            "id": drawing_id, "project_id": project_id, "filename": filename,
+            "sha256": sha256, "size_bytes": size_bytes, "revision": revision,
+            "source_unit": source_unit, "created_at": created_at,
+        }
+
+    def get_drawing(self, drawing_id: str, project_id: str | None = None) -> dict[str, Any] | None:
+        query = "SELECT * FROM drawings WHERE id = ?"
+        params: tuple[Any, ...] = (drawing_id,)
+        if project_id is not None:
+            query += " AND project_id = ?"
+            params = (drawing_id, project_id)
+        with self._connect() as connection:
+            row = connection.execute(query, params).fetchone()
+        return dict(row) if row else None
+
+    def list_drawings(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, project_id, filename, sha256, size_bytes, revision, source_unit, created_at "
+                "FROM drawings WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+
+    def create_drawing_revision_comparison(
+        self,
+        project_id: str,
+        base_drawing_id: str,
+        target_drawing_id: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        comparison_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawing_revision_comparisons VALUES (?, ?, ?, ?, ?, ?)",
+                (comparison_id, project_id, base_drawing_id, target_drawing_id,
+                 json.dumps(report, ensure_ascii=False, default=str), created_at),
+            )
+        return {
+            "id": comparison_id,
+            "project_id": project_id,
+            "base_drawing_id": base_drawing_id,
+            "target_drawing_id": target_drawing_id,
+            "report": report,
+            "created_at": created_at,
+        }
+
+    def get_drawing_revision_comparison(
+        self, comparison_id: str, project_id: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM drawing_revision_comparisons WHERE id = ? AND project_id = ?",
+                (comparison_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"], "project_id": row["project_id"],
+            "base_drawing_id": row["base_drawing_id"],
+            "target_drawing_id": row["target_drawing_id"],
+            "report": json.loads(row["report_json"]),
+            "created_at": row["created_at"],
+        }
+
+    def list_drawing_revision_comparisons(self, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM drawing_revision_comparisons WHERE project_id = ? "
+                "ORDER BY created_at DESC, rowid DESC",
+                (project_id,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"], "project_id": row["project_id"],
+                "base_drawing_id": row["base_drawing_id"],
+                "target_drawing_id": row["target_drawing_id"],
+                "report": json.loads(row["report_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def create_drawing_candidate_review(
+        self,
+        project_id: str,
+        drawing_id: str,
+        run_id: str,
+        candidate_id: str,
+        decision: str,
+        original_quantity: str | None,
+        reviewed_quantity: str | None,
+        note: str,
+        reviewer: str,
+    ) -> dict[str, Any]:
+        review_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawing_candidate_reviews VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (review_id, project_id, drawing_id, run_id, candidate_id, decision,
+                 original_quantity, reviewed_quantity, note, reviewer, created_at),
+            )
+        return {
+            "id": review_id, "project_id": project_id, "drawing_id": drawing_id,
+            "run_id": run_id, "candidate_id": candidate_id, "decision": decision,
+            "original_quantity": original_quantity, "reviewed_quantity": reviewed_quantity,
+            "note": note, "reviewer": reviewer, "created_at": created_at,
+        }
+
+    def list_drawing_candidate_reviews(
+        self, run_id: str, candidate_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM drawing_candidate_reviews WHERE run_id = ?"
+        params: tuple[Any, ...] = (run_id,)
+        if candidate_id is not None:
+            query += " AND candidate_id = ?"
+            params = (run_id, candidate_id)
+        query += " ORDER BY created_at DESC, rowid DESC"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            {
+                "id": row["id"], "project_id": row["project_id"],
+                "drawing_id": row["drawing_id"], "run_id": row["run_id"],
+                "candidate_id": row["candidate_id"], "decision": row["decision"],
+                "original_quantity": row["original_quantity"],
+                "reviewed_quantity": row["reviewed_quantity"], "note": row["note"],
+                "reviewer": row["reviewer"], "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def create_drawing_run(
+        self,
+        project_id: str,
+        drawing_id: str,
+        task: str,
+        engine_id: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        run_id = str(uuid.uuid4())
+        created_at = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO drawing_runs VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (run_id, project_id, drawing_id, task, engine_id,
+                 json.dumps(report, ensure_ascii=False, default=str), created_at),
+            )
+        return {
+            "id": run_id, "project_id": project_id, "drawing_id": drawing_id,
+            "task": task, "engine_id": engine_id, "created_at": created_at,
+            "report": report,
+        }
+
+    def get_drawing_run(
+        self, run_id: str, drawing_id: str, project_id: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM drawing_runs WHERE id = ? AND drawing_id = ? AND project_id = ?",
+                (run_id, drawing_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"], "project_id": row["project_id"],
+            "drawing_id": row["drawing_id"], "task": row["task"],
+            "engine_id": row["engine_id"], "report": json.loads(row["report_json"]),
+            "created_at": row["created_at"],
+        }
+
+    def list_drawing_runs(self, drawing_id: str, project_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM drawing_runs WHERE drawing_id = ? AND project_id = ? "
+                "ORDER BY created_at DESC",
+                (drawing_id, project_id),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"], "project_id": row["project_id"],
+                "drawing_id": row["drawing_id"], "task": row["task"],
+                "engine_id": row["engine_id"], "report": json.loads(row["report_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def create_project(self, payload: ProjectCreate) -> ProjectRead:
         project_id = str(uuid.uuid4())
