@@ -257,8 +257,15 @@ def analyze_dxf_geometry(
         ))
     if any(bucket["block_counts"] for bucket in totals.values()):
         warnings.append("BLOCK_COUNTS_ARE_TOP_LEVEL_MODELSPACE_INSERTS_ONLY.")
-    if any(int(doc.blocks.get(name).block.dxf.get("flags", 0)) & 0xC
-           for name in doc.blocks if not name.startswith("*")):
+    has_xrefs = False
+    for block_layout in doc.blocks:
+        if block_layout.name.startswith("*"):
+            continue
+        flags = int(block_layout.block.dxf.get("flags", 0))
+        if flags & 0xC:
+            has_xrefs = True
+            break
+    if has_xrefs:
         warnings.append("XREF_BLOCKS_PRESENT: external references are not expanded.")
 
     layers = []
