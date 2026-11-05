@@ -6,6 +6,7 @@ classification. A project/company mapping must be reviewed before use.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 from decimal import Decimal
 from typing import Any
 
@@ -230,8 +231,15 @@ def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, An
     results = []
     for suggestion in report.get("mapping_suggestions", []):
         candidates = suggestion.get("candidates", [])
+        candidate_rule_key = "|".join(sorted(
+            str(item.get("rule_id", "")) for item in candidates
+        )) or suggestion.get("status", "unmapped")
+        candidate_id = hashlib.sha256(
+            f"{suggestion['layer']}|{candidate_rule_key}".encode("utf-8")
+        ).hexdigest()[:20]
         if suggestion.get("status") != "candidate_needs_confirmation" or len(candidates) != 1:
             results.append({
+                "candidate_id": candidate_id,
                 "layer": suggestion["layer"],
                 "status": suggestion.get("status", "unmapped"),
                 "quantity": None,
@@ -243,6 +251,7 @@ def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, An
         rule = candidates[0]
         if rule.get("entity_type_check") == "entity_type_mismatch":
             results.append({
+                "candidate_id": candidate_id,
                 "layer": suggestion["layer"],
                 "rule_id": rule["rule_id"],
                 "status": "entity_type_mismatch_needs_review",
@@ -261,6 +270,7 @@ def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, An
         ]
         if not rows:
             results.append({
+                "candidate_id": candidate_id,
                 "layer": suggestion["layer"],
                 "rule_id": rule["rule_id"],
                 "status": "no_matching_measurements",
@@ -274,6 +284,7 @@ def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, An
         normalized_values = [row.get("normalized_value") for row in rows]
         if kind in {"length", "area"} and any(value is None for value in normalized_values):
             results.append({
+                "candidate_id": candidate_id,
                 "layer": suggestion["layer"],
                 "rule_id": rule["rule_id"],
                 "status": "unit_confirmation_required",
@@ -316,6 +327,7 @@ def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, An
             status = "candidate_for_human_review"
 
         results.append({
+            "candidate_id": candidate_id,
             "layer": suggestion["layer"],
             "rule_id": rule["rule_id"],
             "mapping_source": suggestion.get("mapping_source"),
