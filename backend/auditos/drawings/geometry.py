@@ -102,6 +102,15 @@ def _polyline_vertices(entity: Any) -> tuple[list[tuple[float, float, float]], b
     return [], False
 
 
+def _polyline_has_bulge(entity: Any) -> bool:
+    if entity.dxftype() == "LWPOLYLINE":
+        return any(abs(float(bulge)) >= 1e-12 for _, _, bulge in entity.get_points("xyb"))
+    if entity.dxftype() == "POLYLINE":
+        return any(abs(float(vertex.dxf.get("bulge", 0.0))) >= 1e-12
+                   for vertex in entity.vertices)
+    return False
+
+
 def _polyline_geometry(entity: Any) -> tuple[float, float | None, bool]:
     vertices, closed = _polyline_vertices(entity)
     if len(vertices) < 2:
@@ -175,8 +184,15 @@ def analyze_dxf_geometry(
     unsupported: dict[str, int] = defaultdict(int)
     seen_handles: set[str] = set()
 
-    def add_measurement(entity: Any, kind: str, value: float, formula: str,
-                        confidence: str = "exact_geometry", extra_warnings: list[str] | None = None):
+    def add_measurement(
+        entity: Any,
+        kind: str,
+        value: float,
+        formula: str,
+        confidence: str = "exact_geometry",
+        extra_warnings: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
         layer = str(entity.dxf.layer)
         handle = str(entity.dxf.handle)
         raw = _decimal(value)
@@ -197,6 +213,7 @@ def analyze_dxf_geometry(
             "formula": formula,
             "confidence_class": confidence,
             "warnings": extra_warnings or [],
+            **(metadata or {}),
         })
 
     for entity in doc.modelspace():
@@ -245,11 +262,16 @@ def analyze_dxf_geometry(
                 )
                 warnings.append(f"{reason}:{handle}")
                 continue
-            add_measurement(entity, "length", length, "sum(straight_chords_and_bulge_arc_lengths)")
+            has_bulge = _polyline_has_bulge(entity)
+            add_measurement(
+                entity, "length", length, "sum(straight_chords_and_bulge_arc_lengths)",
+                metadata={"has_bulge": has_bulge},
+            )
             bucket["linear_length"] += length
             if area is not None:
                 add_measurement(entity, "area", area, "shoelace_area_plus_signed_bulge_segment_corrections",
-                                extra_warnings=["SELF_INTERSECTION_NOT_VALIDATED"])
+                                extra_warnings=["SELF_INTERSECTION_NOT_VALIDATED"],
+                                metadata={"has_bulge": has_bulge})
                 bucket["closed_area"] += area
         elif kind == "INSERT":
             block_name = str(entity.dxf.name)
