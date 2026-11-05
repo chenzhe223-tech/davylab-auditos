@@ -1,7 +1,5 @@
 import hashlib
-import json
 import tempfile
-from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -12,12 +10,15 @@ from pydantic import BaseModel, Field
 
 from auditos.audit_engine.settlement_checks import review_rows
 from auditos.domain.models import ProjectCreate, ProjectRead
+from auditos.drawings.models import TakeoffRequest
+from auditos.drawings.service import engine_capabilities, plan_takeoff
 from auditos.ingestion.settlement_xlsx import read_settlement_xlsx
 from auditos.storage.repository import ProjectRepository
 
 router = APIRouter()
 repository = ProjectRepository()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+UPLOAD_FIELD = File(...)
 
 
 class FindingStatusUpdate(BaseModel):
@@ -43,8 +44,20 @@ def get_project(project_id: str) -> ProjectRead:
     return project
 
 
+@router.get("/drawings/engines", tags=["drawings"])
+def get_drawing_engines() -> dict:
+    return {"engines": [item.model_dump(mode="json") for item in engine_capabilities()]}
+
+
+@router.post("/projects/{project_id}/drawings/plan", tags=["drawings"])
+def plan_drawing_takeoff(project_id: str, payload: TakeoffRequest) -> dict:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return plan_takeoff(payload)
+
+
 @router.post("/projects/{project_id}/settlements/audit", tags=["settlement"])
-async def audit_settlement(project_id: str, file: UploadFile = File(...)) -> dict:
+async def audit_settlement(project_id: str, file: UploadFile = UPLOAD_FIELD) -> dict:
     if repository.get_project(project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
     if Path(file.filename or "").suffix.lower() != ".xlsx":
@@ -83,7 +96,8 @@ async def audit_settlement(project_id: str, file: UploadFile = File(...)) -> dic
     ]
     saved = repository.save_findings(project_id, import_id, serialized)
     return {
-        "project_id": project_id, "import_id": import_id, "filename": Path(file.filename or "settlement.xlsx").name,
+        "project_id": project_id, "import_id": import_id,
+        "filename": Path(file.filename or "settlement.xlsx").name,
         "sha256": digest, "rows_read": len(rows), "findings_count": len(saved),
         "notice": "规则触发项是审核线索，不等于确认审减金额；请逐条人工复核。",
         "findings": saved,
@@ -113,8 +127,10 @@ def export_findings(project_id: str) -> StreamingResponse:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "审核问题台账"
-    headers = ["发现编号", "问题代码", "类别", "审核事项", "说明", "来源定位", "规则编号",
-               "规则版本", "申报金额", "计算金额", "差异金额", "处理状态", "需人工复核"]
+    headers = [
+        "发现编号", "问题代码", "类别", "审核事项", "说明", "来源定位",
+        "规则编号", "规则版本", "申报金额", "计算金额", "差异金额", "处理状态", "需人工复核",
+    ]
     sheet.append(headers)
     for item in findings:
         sheet.append([
@@ -125,12 +141,14 @@ def export_findings(project_id: str) -> StreamingResponse:
         ])
     for column in sheet.columns:
         letter = column[0].column_letter
-        sheet.column_dimensions[letter].width = min(max(max(len(str(cell.value or "")) for cell in column) + 2, 12), 48)
-    output = tempfile.SpooledTemporaryFile()
-    workbook.save(output)
-    output.seek(0)
+        longest = max(len(str(cell.value or "")) for cell in column)
+        sheet.column_dimensions[letter].width = min(max(longest + 2, 12), 48)
+    with tempfile.SpooledTemporaryFile() as output:
+        workbook.save(output)
+        output.seek(0)
+        content = output.read()
     return StreamingResponse(
-        output,
+        iter([content]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="auditos-findings-{project_id}.xlsx"'},
     )
