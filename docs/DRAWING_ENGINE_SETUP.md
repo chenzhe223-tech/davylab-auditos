@@ -91,6 +91,23 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 
 如未提供单位覆盖值，AuditOS 读取图纸 `$INSUNITS`。单位未知时不进行公制换算。
 
+项目自定义映射 JSON 示例：
+
+```json
+{
+  "rule_id": "project.water.pipe",
+  "discipline": "plumbing",
+  "item_name": "项目自定义给水管",
+  "measurement_kind": "length",
+  "unit": "m",
+  "layer_patterns": ["*给水管*", "P-CW*"],
+  "entity_types": ["LINE", "ARC", "LWPOLYLINE", "POLYLINE"],
+  "notes": "按合同和项目计量规则确认立管、管件及预留长度。"
+}
+```
+
+项目映射优先于通用模板，但依然标记为待确认；修改同一 `rule_id` 会创建新版本，不会把它变成正式定额规则。
+
 ## 6. 安全与计量边界
 
 - 原始图纸保存在 `AUDITOS_DATA_DIR/drawings/{project_id}/`，数据库保存哈希、版本和路径；转换/分析产物写入独立 run 目录。
