@@ -206,6 +206,20 @@ def export_drawing_revision_comparison(project_id: str, comparison_id: str) -> S
             "; ".join(f"{name}: {delta}" for name, delta in item.get("delta_block_counts", {}).items()),
         ])
 
+    entity_sheet = workbook.create_sheet("实体变化")
+    entity_sheet.append([
+        "图层", "变化状态", "基准Handle", "目标Handle", "实体类型",
+        "基准几何Hash", "目标几何Hash", "几何Hash",
+    ])
+    entity_report = report.get("entity_changes", {})
+    for item in entity_report.get("changes", []):
+        entity_sheet.append([
+            item.get("layer"), item.get("status"), item.get("base_handle"),
+            item.get("target_handle"), item.get("entity_type"),
+            item.get("base_geometry_hash"), item.get("target_geometry_hash"),
+            item.get("geometry_hash"),
+        ])
+
     notes_sheet = workbook.create_sheet("复核提示")
     notes_sheet.append(["说明"])
     for note in report.get("limitations", []):
