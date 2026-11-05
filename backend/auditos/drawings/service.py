@@ -13,7 +13,6 @@ from auditos.drawings.models import (
 )
 from auditos.drawings.router import route_drawing_task
 
-
 MAX_DRAWING_BYTES = 250 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".dwg", ".dxf"}
 
