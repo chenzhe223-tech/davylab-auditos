@@ -2,7 +2,11 @@ import hashlib
 from pathlib import Path
 from uuid import uuid4
 
-from auditos.drawings.adapters import CadAiAgentAdapter, DwgReaderAdapter, DxfCivilAdapter
+from auditos.drawings.adapters import (
+    CadAiAgentAdapter,
+    DwgReaderAdapter,
+    DxfCivilAdapter,
+)
 from auditos.drawings.models import EngineCapability, TakeoffRequest
 from auditos.drawings.router import route_drawing_task
 
@@ -50,9 +54,7 @@ def plan_takeoff(request: TakeoffRequest) -> dict:
     decision = route_drawing_task(request)
     capabilities = {item.engine_id: item for item in engine_capabilities()}
     selected = [decision.primary_engine, *decision.secondary_engines]
-    engine_status = [
-        capabilities[item] for item in selected if item in capabilities
-    ]
+    engine_status = [capabilities[item] for item in selected if item in capabilities]
     return {
         "decision": decision,
         "engine_status": engine_status,
