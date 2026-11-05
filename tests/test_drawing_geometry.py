@@ -41,6 +41,15 @@ def test_deterministic_measurements_and_unit_conversion(tmp_path):
         if row["layer"] == "E-AREA" and row["measurement_kind"] == "area"
     )
     assert area_evidence["source_unit"] == "mm2"
+    assert math.isclose(float(area_evidence["normalized_value"]), 1.0)
+    circle_area_evidence = next(
+        row for row in report["measurements"]
+        if row["layer"] == "E-DEVICE" and row["entity_type"] == "CIRCLE"
+        and row["measurement_kind"] == "area"
+    )
+    assert math.isclose(
+        float(circle_area_evidence["normalized_value"]), math.pi, rel_tol=1e-9
+    )
     assert layers["E-DEVICE"]["block_counts"] == {"LIGHT_FIXTURE": 1}
     assert any(row["entity_type"] == "CIRCLE" and row["measurement_kind"] == "area"
                for row in report["measurements"])
