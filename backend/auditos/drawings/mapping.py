@@ -151,6 +151,7 @@ def suggest_layer_mappings(
     layer_names: list[str],
     discipline: str = "all",
     custom_rules: list[dict[str, Any]] | None = None,
+    layer_entity_types: dict[str, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
     suggestions = []
     project_rules = [LayerMappingRule.model_validate(rule) for rule in (custom_rules or [])]
@@ -177,15 +178,38 @@ def suggest_layer_mappings(
                 "notice": "未命中模板；需由项目人员建立自定义图层映射。",
             })
             continue
+        actual_types = set((layer_entity_types or {}).get(layer, []))
+        candidates = []
+        mismatched = False
+        for rule in matches:
+            expected_types = set(rule.entity_types)
+            if not actual_types:
+                type_check = "not_checked"
+            elif not expected_types or actual_types.intersection(expected_types):
+                type_check = "compatible"
+            else:
+                type_check = "entity_type_mismatch"
+                mismatched = True
+            candidates.append({
+                **rule.model_dump(mode="json"),
+                "entity_type_check": type_check,
+                "actual_entity_types": sorted(actual_types),
+            })
+        overall_status = (
+            "ambiguous_needs_manual_mapping" if len(matches) > 1 else
+            "entity_type_mismatch_needs_review" if mismatched else
+            "candidate_needs_confirmation"
+        )
         suggestions.append({
             "layer": layer,
-            "status": "candidate_needs_confirmation" if len(matches) == 1
-                      else "ambiguous_needs_manual_mapping",
+            "status": overall_status,
             "mapping_source": matches[0].source,
-            "candidates": [rule.model_dump(mode="json") for rule in matches],
+            "candidates": candidates,
             "notice": (
                 "存在多个候选映射，禁止自动归类。"
                 if len(matches) > 1 else
+                "图层内实体类型与规则预期不符，需检查图层语义或映射。"
+                if mismatched else
                 "仅为图层语义候选；确认专业、系统、构件及计量规则后方可采用。"
             ),
         })
