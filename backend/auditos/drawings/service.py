@@ -5,8 +5,8 @@ from uuid import uuid4
 from auditos.drawings.adapters import (
     CadAiAgentAdapter,
     DwgReaderAdapter,
-    NativeDxfGeometryAdapter,
     DxfCivilAdapter,
+    NativeDxfGeometryAdapter,
 )
 from auditos.drawings.models import (
     EngineCapability,
