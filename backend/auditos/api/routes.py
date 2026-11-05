@@ -98,6 +98,10 @@ def compare_project_drawing_revisions(
             Path(target["stored_path"]),
             source_unit_override=payload.target_source_unit_override or target.get("source_unit"),
         )
+        if base_report["drawing_sha256"] != base["sha256"]:
+            raise ValueError("Base drawing hash changed after upload.")
+        if target_report["drawing_sha256"] != target["sha256"]:
+            raise ValueError("Target drawing hash changed after upload.")
         comparison = compare_drawing_revision_reports(base_report, target_report)
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"Revision comparison failed: {exc}") from exc
