@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from importlib.metadata import PackageNotFoundError, version
 import os
 import shutil
 import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
