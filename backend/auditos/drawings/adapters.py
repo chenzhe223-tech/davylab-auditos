@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from importlib.metadata import PackageNotFoundError, version
 import os
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from auditos.drawings.geometry import analyze_dxf_geometry
 from auditos.drawings.models import DrawingTask, EngineCapability, EngineId
 
 
@@ -31,6 +33,59 @@ class EngineAdapter:
             timeout=timeout,
             check=False,
         )
+
+
+class NativeDxfGeometryAdapter(EngineAdapter):
+    """AuditOS-owned deterministic geometry engine; authoritative calculation source."""
+
+    engine_id = EngineId.NATIVE
+
+    def probe(self) -> EngineCapability:
+        installed = importlib.util.find_spec("ezdxf") is not None
+        try:
+            package_version = version("ezdxf") if installed else None
+        except PackageNotFoundError:
+            package_version = None
+        return EngineCapability(
+            engine_id=self.engine_id,
+            installed=installed,
+            available_tasks=[
+                DrawingTask.BLOCK_COUNT,
+                DrawingTask.LINEAR_TAKEOFF,
+                DrawingTask.AREA_TAKEOFF,
+            ],
+            version=package_version,
+            executable=None,
+            warnings=[] if installed else ["未安装 ezdxf；原生 DXF 几何内核不可用。"],
+        )
+
+    def execute(self, task: DrawingTask, drawing_path: Path, output_dir: Path) -> dict[str, Any]:
+        capability = self.probe()
+        if not capability.installed:
+            raise RuntimeError("ezdxf is not installed")
+        if task not in {
+            DrawingTask.BLOCK_COUNT,
+            DrawingTask.LINEAR_TAKEOFF,
+            DrawingTask.AREA_TAKEOFF,
+        }:
+            raise ValueError(f"Native geometry engine does not support {task.value}")
+        report = analyze_dxf_geometry(drawing_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / "auditos-native-geometry.json"
+        output_file.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        return {
+            "engine": self.engine_id.value,
+            "engine_version": capability.version,
+            "report": report,
+            "output_file": str(output_file),
+            "candidate_only": False,
+            "note": (
+                "确定性几何计算结果；仍需确认图层专业映射、图纸单位、图纸范围及安装工程计量规则。"
+            ),
+        }
 
 
 class DwgReaderAdapter(EngineAdapter):
