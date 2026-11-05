@@ -554,6 +554,19 @@ def export_drawing_takeoff(
     ]:
         info_sheet.append([key, value])
 
+    review_sheet = workbook.create_sheet("复核记录")
+    review_sheet.append(["候选ID", "复核决定", "原始候选量", "复核后数量", "复核说明", "复核人", "时间"])
+    for review in repository.list_drawing_candidate_reviews(run_id):
+        review_sheet.append([
+            review.get("candidate_id"),
+            review.get("decision"),
+            review.get("original_quantity"),
+            review.get("reviewed_quantity"),
+            review.get("note"),
+            review.get("reviewer"),
+            review.get("created_at"),
+        ])
+
     for sheet in workbook.worksheets:
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
