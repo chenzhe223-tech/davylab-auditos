@@ -14,7 +14,11 @@ from auditos.audit_engine.settlement_checks import review_rows
 from auditos.domain.models import ProjectCreate, ProjectRead
 from auditos.drawings.adapters import DwgReaderAdapter
 from auditos.drawings.geometry import analyze_dxf_geometry
-from auditos.drawings.mapping import get_mapping_templates, suggest_layer_mappings
+from auditos.drawings.mapping import (
+    build_mapped_takeoff_candidates,
+    get_mapping_templates,
+    suggest_layer_mappings,
+)
 from auditos.drawings.models import DrawingAnalysisRequest, ProjectLayerMapping, TakeoffRequest
 from auditos.drawings.router import classify_task
 from auditos.drawings.service import engine_capabilities, plan_takeoff
@@ -205,6 +209,7 @@ def analyze_uploaded_drawing(
         repository.list_project_layer_mappings(project_id),
         {item["layer"]: list(item["entity_types"]) for item in report["layers"]},
     )
+    report["mapped_takeoff_candidates"] = build_mapped_takeoff_candidates(report)
     if conversion_result:
         report["conversion"] = {
             "engine": conversion_result["engine"],
