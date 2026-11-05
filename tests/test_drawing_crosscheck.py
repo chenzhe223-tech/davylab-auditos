@@ -135,3 +135,42 @@ def test_dwg_reader_csv_compares_only_line_lengths(tmp_path):
     assert result["overall_status"] == "match"
     assert result["metrics"][0]["metric"] == "line_length"
     assert float(result["metrics"][0]["difference"]) == 0
+
+
+
+def test_dxf_civil_comparison_is_withheld_when_insert_expansion_may_differ():
+    native = {
+        "layers": [{"layer": "E-DEVICE", "block_counts": {"PANEL": 2}}],
+        "measurements": [
+            {"layer": "E-DEVICE", "entity_type": "INSERT", "measurement_kind": "count", "raw_value": "1", "block_name": "PANEL"},
+            {"layer": "E-DEVICE", "entity_type": "INSERT", "measurement_kind": "count", "raw_value": "1", "block_name": "PANEL"},
+        ],
+    }
+    external = {
+        "layers": [{
+            "layer": "E-DEVICE", "total_length": 0,
+            "closed_polyline_area": 0, "circle_total_area": 0,
+            "block_inserts": {"PANEL": 2},
+        }]
+    }
+
+    result = compare_dxf_civil_takeoff(native, external)
+
+    assert result["overall_status"] == "partial_or_not_comparable"
+    assert all(
+        metric["status"] == "not_comparable_upstream_geometry_limit"
+        for metric in result["layers"][0]["metrics"]
+    )
+
+
+def test_dwg_reader_component_only_csv_has_no_comparable_layer_metrics(tmp_path):
+    path = tmp_path / "components.csv"
+    path.write_text(
+        "[构件清单]\n构件类型,数量,匹配实体数\n配电箱,2,2\n",
+        encoding="utf-8-sig",
+    )
+
+    result = compare_dwg_reader_csv({"measurements": []}, path)
+
+    assert result["overall_status"] == "no_comparable_metrics"
+    assert result["metrics"] == []
