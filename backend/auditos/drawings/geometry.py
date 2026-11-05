@@ -324,3 +324,79 @@ def analyze_dxf_geometry(
         "measurement_count": len(measurements),
         "warnings": warnings,
     }
+
+
+
+def extract_entity_geometry(path: Path, entity_handle: str) -> dict[str, Any]:
+    """Return a safe, structured geometry snapshot for a measured DXF entity."""
+    path = Path(path)
+    if path.suffix.lower() != ".dxf" or not path.is_file():
+        raise DrawingGeometryError("Entity evidence lookup requires an existing DXF file.")
+    try:
+        doc = ezdxf.readfile(path)
+    except (OSError, DXFStructureError) as exc:
+        raise DrawingGeometryError(f"Unable to parse DXF for evidence lookup: {exc}") from exc
+
+    handle = entity_handle.strip().upper()
+    entity = doc.entitydb.get(handle)
+    if entity is None or not entity.is_alive:
+        raise DrawingGeometryError(f"Entity handle not found: {handle}")
+
+    kind = entity.dxftype()
+    geometry: dict[str, Any]
+    if kind == "LINE":
+        geometry = {
+            "start": [float(value) for value in entity.dxf.start],
+            "end": [float(value) for value in entity.dxf.end],
+        }
+    elif kind in {"ARC", "CIRCLE"}:
+        geometry = {
+            "center": [float(value) for value in entity.dxf.center],
+            "radius": float(entity.dxf.radius),
+            "extrusion": [float(value) for value in entity.dxf.get("extrusion", (0, 0, 1))],
+        }
+        if kind == "ARC":
+            geometry["start_angle_degrees"] = float(entity.dxf.start_angle)
+            geometry["end_angle_degrees"] = float(entity.dxf.end_angle)
+    elif kind == "LWPOLYLINE":
+        geometry = {
+            "vertices_xy_bulge": [
+                [float(x), float(y), float(bulge)]
+                for x, y, bulge in entity.get_points("xyb")
+            ],
+            "closed": bool(entity.closed),
+            "elevation": float(entity.dxf.elevation),
+            "extrusion": [float(value) for value in entity.dxf.get("extrusion", (0, 0, 1))],
+        }
+    elif kind == "POLYLINE":
+        geometry = {
+            "vertices": [
+                [float(vertex.dxf.location.x), float(vertex.dxf.location.y),
+                 float(vertex.dxf.location.z), float(vertex.dxf.get("bulge", 0.0))]
+                for vertex in entity.vertices
+            ],
+            "closed": bool(entity.is_closed),
+            "is_3d_polyline": bool(entity.is_3d_polyline),
+        }
+    elif kind == "INSERT":
+        geometry = {
+            "block_name": str(entity.dxf.name),
+            "insert": [float(value) for value in entity.dxf.insert],
+            "rotation_degrees": float(entity.dxf.rotation),
+            "scale": [
+                float(entity.dxf.get("xscale", 1.0)),
+                float(entity.dxf.get("yscale", 1.0)),
+                float(entity.dxf.get("zscale", 1.0)),
+            ],
+        }
+    else:
+        geometry = {"unsupported_geometry_type": kind}
+
+    return {
+        "entity_handle": handle,
+        "entity_type": kind,
+        "layer": str(entity.dxf.layer),
+        "geometry": geometry,
+        "drawing_sha256": _hash_file(path),
+        "evidence_scope": "source_dxf_entity_snapshot",
+    }
