@@ -1,4 +1,8 @@
-from auditos.drawings.crosscheck import compare_dxf_civil_takeoff
+from auditos.drawings.crosscheck import (
+    compare_cad_ai_takeoff,
+    compare_dxf_civil_takeoff,
+    compare_dwg_reader_csv,
+)
 
 
 def test_cross_engine_comparison_matches_only_semantically_compatible_metrics():
@@ -71,3 +75,63 @@ def test_cross_engine_comparison_reports_real_differences():
     assert result["overall_status"] == "differences_found"
     assert result["layers"][0]["metrics"][0]["status"] == "difference"
     assert result["layers"][0]["metrics"][0]["difference"] == "5"
+
+
+
+def test_cad_ai_linear_and_symbol_metrics_compare_with_native_evidence():
+    native = {
+        "measurements": [
+            {"layer": "E-TRAY", "entity_type": "LINE", "measurement_kind": "length", "raw_value": "5"},
+            {"layer": "E-TRAY", "entity_type": "LWPOLYLINE", "measurement_kind": "length", "raw_value": "3", "has_bulge": False},
+            {"layer": "E-DEVICE", "entity_type": "INSERT", "measurement_kind": "count", "raw_value": "1", "block_name": "PANEL"},
+            {"layer": "E-DEVICE", "entity_type": "INSERT", "measurement_kind": "count", "raw_value": "1", "block_name": "PANEL"},
+        ]
+    }
+    external = {
+        "items": [
+            {"category": "linear", "source_layer": "E-TRAY", "quantity": 8.0},
+            {"category": "symbol", "name": "PANEL", "quantity": 2},
+        ]
+    }
+
+    result = compare_cad_ai_takeoff(native, external)
+
+    assert result["overall_status"] == "match"
+    assert {item["status"] for item in result["metrics"]} == {"match"}
+
+
+def test_cad_ai_linear_comparison_is_withheld_for_bulges():
+    native = {
+        "measurements": [
+            {"layer": "E-TRAY", "entity_type": "LWPOLYLINE", "measurement_kind": "length", "raw_value": "12", "has_bulge": True}
+        ]
+    }
+    external = {
+        "items": [{"category": "linear", "source_layer": "E-TRAY", "quantity": 10.0}]
+    }
+
+    result = compare_cad_ai_takeoff(native, external)
+
+    assert result["metrics"][0]["status"] == "not_comparable_upstream_geometry_limit"
+
+
+def test_dwg_reader_csv_compares_only_line_lengths(tmp_path):
+    path = tmp_path / "dwg-reader.csv"
+    path.write_text(
+        "[图层几何量]\n"
+        "图层,直线数,直线总长,多段线数,多段线总长,圆数,圆弧数,文字数\n"
+        "P-PIPE,2,10.000,0,0.000,0,0,0\n",
+        encoding="utf-8-sig",
+    )
+    native = {
+        "measurements": [
+            {"layer": "P-PIPE", "entity_type": "LINE", "measurement_kind": "length", "raw_value": "4"},
+            {"layer": "P-PIPE", "entity_type": "LINE", "measurement_kind": "length", "raw_value": "6"},
+        ]
+    }
+
+    result = compare_dwg_reader_csv(native, path)
+
+    assert result["overall_status"] == "match"
+    assert result["metrics"][0]["metric"] == "line_length"
+    assert result["metrics"][0]["difference"] == "0"
