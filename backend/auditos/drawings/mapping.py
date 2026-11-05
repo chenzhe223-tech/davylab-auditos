@@ -235,7 +235,7 @@ def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, An
             str(item.get("rule_id", "")) for item in candidates
         )) or suggestion.get("status", "unmapped")
         candidate_id = hashlib.sha256(
-            f"{suggestion['layer']}|{candidate_rule_key}".encode("utf-8")
+            f"{suggestion['layer']}|{candidate_rule_key}".encode()
         ).hexdigest()[:20]
         if suggestion.get("status") != "candidate_needs_confirmation" or len(candidates) != 1:
             results.append({
