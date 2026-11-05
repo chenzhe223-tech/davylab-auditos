@@ -487,14 +487,20 @@ def export_drawing_takeoff(
     workbook = Workbook()
     candidates_sheet = workbook.active
     candidates_sheet.title = "算量候选"
+    review_records = repository.list_drawing_candidate_reviews(run_id)
+    latest_reviews = {}
+    for review in review_records:
+        latest_reviews.setdefault(review["candidate_id"], review)
     candidates_sheet.append([
-        "专业", "候选清单项", "单位", "候选数量", "来源图层", "状态",
-        "可信等级", "实体Handle", "需人工复核", "说明",
+        "专业", "候选清单项", "单位", "候选数量", "复核决定", "复核后数量",
+        "来源图层", "状态", "可信等级", "实体Handle", "需人工复核", "说明",
     ])
     for item in report.get("mapped_takeoff_candidates", []):
+        latest_review = latest_reviews.get(item.get("candidate_id"), {})
         candidates_sheet.append([
             item.get("discipline"), item.get("item_name"), item.get("unit"),
             str(item.get("quantity")) if item.get("quantity") is not None else None,
+            latest_review.get("decision"), latest_review.get("reviewed_quantity"),
             item.get("layer"), item.get("status"), item.get("confidence_class"),
             ", ".join(item.get("evidence_handles", [])),
             "是" if item.get("requires_human_review", True) else "否",
