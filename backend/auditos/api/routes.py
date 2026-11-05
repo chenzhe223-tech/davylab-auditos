@@ -240,7 +240,7 @@ def analyze_uploaded_drawing(
                 engine_result = adapter.execute(
                     task, measurement_path, run_dir / adapter.engine_id.value
                 )
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
                 external_engine_runs.append({
                     "engine": adapter.engine_id.value,
                     "status": "failed",
