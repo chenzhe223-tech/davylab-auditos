@@ -47,6 +47,7 @@ uvicorn auditos.main:app --reload
 - `POST /api/projects/{project_id}/drawings/upload`：上传 DWG/DXF，登记哈希、修订号和单位。
 - `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期几何分析。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：读取分析历史。
+- `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出算量证据工作簿。
 - `GET /api/drawings/mapping-templates`：查看安装专业图层映射模板。
 - `GET/POST /api/projects/{project_id}/drawings/mappings`：维护项目自定义映射，自动版本化。
 - `GET /api/projects/{project_id}/drawings/mappings/{rule_id}/history`：查询映射历史版本。
