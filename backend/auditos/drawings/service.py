@@ -7,7 +7,10 @@ from auditos.drawings.adapters import (
     DwgReaderAdapter,
     DxfCivilAdapter,
 )
-from auditos.drawings.models import EngineCapability, TakeoffRequest
+from auditos.drawings.models import (
+    EngineCapability,
+    TakeoffRequest,
+)
 from auditos.drawings.router import route_drawing_task
 
 
