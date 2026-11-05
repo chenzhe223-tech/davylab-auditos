@@ -45,6 +45,8 @@ uvicorn auditos.main:app --reload
 ## 图纸算量 API（开发分支）
 - `GET /api/drawings/engines`：本机引擎能力探测。
 - `POST /api/projects/{project_id}/drawings/upload`：上传 DWG/DXF，登记哈希、修订号和单位。
+- `POST /api/projects/{project_id}/drawings/compare-revisions`：比较两个 DXF 修订版的图层工程量变化。
+- `GET /api/projects/{project_id}/drawings/revision-comparisons`：读取修订对比历史。
 - `POST /api/projects/{project_id}/drawings/{drawing_id}/analyze`：执行首期几何分析。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs`：读取分析历史。
 - `GET /api/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/export.xlsx`：导出算量证据工作簿。
