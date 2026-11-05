@@ -102,7 +102,8 @@ class TakeoffCandidate(BaseModel):
     confidence_class: ConfidenceClass
     warnings: list[str] = Field(default_factory=list)
     formula: str
-
+    status: str = "candidate_for_human_review"
+    requires_human_review: bool = True
 
 
 class DrawingAnalysisRequest(BaseModel):
