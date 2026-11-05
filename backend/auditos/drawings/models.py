@@ -134,3 +134,11 @@ class CandidateReviewRequest(BaseModel):
     reviewed_quantity: Decimal | None = Field(default=None, ge=0)
     note: str = Field(default="", max_length=1000)
     reviewer: str = Field(default="local_user", min_length=2, max_length=80)
+
+
+
+class DrawingRevisionCompareRequest(BaseModel):
+    base_drawing_id: str = Field(min_length=1, max_length=80)
+    target_drawing_id: str = Field(min_length=1, max_length=80)
+    base_source_unit_override: str | None = Field(default=None, max_length=40)
+    target_source_unit_override: str | None = Field(default=None, max_length=40)
