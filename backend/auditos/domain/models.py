@@ -1,10 +1,9 @@
-from datetime import UTC, datetime
-
+from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict, Field
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 class ProjectCreate(BaseModel):
