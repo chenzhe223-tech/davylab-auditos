@@ -108,6 +108,8 @@ pip install "ezdxf[draw]" matplotlib pyyaml
 
 项目映射优先于通用模板，但依然标记为待确认；修改同一 `rule_id` 会创建新版本，不会把它变成正式定额规则。建议器还会将规则预期实体类型与图纸实际实体类型对照；例如文字层命中管线规则时会标记实体类型不匹配，不会静默采用。
 
+分析结果中的 `mapped_takeoff_candidates` 会按映射规则聚合长度/面积/块数，并保留实体 Handle。存在歧义、实体类型不匹配或单位未知时，不生成数值；可生成数值的结果也只标记为 `candidate_for_human_review`，不等于已确认清单量。
+
 ## 6. 安全与计量边界
 
 - 原始图纸保存在 `AUDITOS_DATA_DIR/drawings/{project_id}/`，数据库保存哈希、版本和路径；转换/分析产物写入独立 run 目录。
