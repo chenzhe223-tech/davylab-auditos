@@ -36,6 +36,11 @@ def test_deterministic_measurements_and_unit_conversion(tmp_path):
     assert math.isclose(float(layers["E-CABLE"]["linear_length_m"]), 5.0)
     assert math.isclose(float(layers["E-ARC"]["linear_length_m"]), math.pi / 2, rel_tol=1e-9)
     assert math.isclose(float(layers["E-AREA"]["closed_area_m2"]), 1.0)
+    area_evidence = next(
+        row for row in report["measurements"]
+        if row["layer"] == "E-AREA" and row["measurement_kind"] == "area"
+    )
+    assert area_evidence["source_unit"] == "mm2"
     assert layers["E-DEVICE"]["block_counts"] == {"LIGHT_FIXTURE": 1}
     assert any(row["entity_type"] == "CIRCLE" and row["measurement_kind"] == "area"
                for row in report["measurements"])
