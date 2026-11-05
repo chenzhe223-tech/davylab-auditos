@@ -225,7 +225,7 @@ class CadAiAgentAdapter(EngineAdapter):
         if not capability.installed:
             raise RuntimeError("cad-dxf-agent analysis package is not installed")
         subcommand = {
-            DrawingTask.AREA_TAKEOFF: "zones",
+            DrawingTask.AREA_TAKEOFF: "takeoff",
             DrawingTask.LINEAR_TAKEOFF: "takeoff",
             DrawingTask.BLOCK_COUNT: "takeoff",
             DrawingTask.STRUCTURE_SUMMARY: "summary",
