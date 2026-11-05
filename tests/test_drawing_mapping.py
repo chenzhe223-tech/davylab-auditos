@@ -1,5 +1,9 @@
 from auditos.domain.models import ProjectCreate
-from auditos.drawings.mapping import get_mapping_templates, suggest_layer_mappings
+from auditos.drawings.mapping import (
+    build_mapped_takeoff_candidates,
+    get_mapping_templates,
+    suggest_layer_mappings,
+)
 from auditos.storage.repository import ProjectRepository
 
 
@@ -70,3 +74,86 @@ def test_mapping_checks_actual_entity_types_before_acceptance():
     assert by_layer["给水管"]["status"] == "candidate_needs_confirmation"
     assert by_layer["给水管"]["candidates"][0]["entity_type_check"] == "compatible"
     assert by_layer["给水管-文字"]["status"] == "entity_type_mismatch_needs_review"
+
+
+
+def test_mapped_linear_candidate_aggregates_only_entity_evidence():
+    suggestions = suggest_layer_mappings(
+        ["给水管"], "plumbing", layer_entity_types={"给水管": ["LINE", "TEXT"]}
+    )
+    report = {
+        "mapping_suggestions": suggestions,
+        "measurements": [
+            {
+                "layer": "给水管", "measurement_kind": "length", "entity_type": "LINE",
+                "entity_handle": "A1", "normalized_value": "1.25",
+            },
+            {
+                "layer": "给水管", "measurement_kind": "length", "entity_type": "LINE",
+                "entity_handle": "A2", "normalized_value": "0.75",
+            },
+            {
+                "layer": "给水管", "measurement_kind": "count", "entity_type": "INSERT",
+                "entity_handle": "B1", "normalized_value": "1",
+            },
+        ],
+    }
+
+    candidate = build_mapped_takeoff_candidates(report)[0]
+
+    assert candidate["status"] == "candidate_for_human_review"
+    assert candidate["quantity"] == 2
+    assert candidate["unit"] == "m"
+    assert candidate["evidence_handles"] == ["A1", "A2"]
+    assert candidate["requires_human_review"] is True
+
+
+def test_unknown_units_and_ambiguous_mappings_withhold_candidate_quantity():
+    unknown_unit = {
+        "mapping_suggestions": suggest_layer_mappings(
+            ["给水管"], "plumbing", layer_entity_types={"给水管": ["LINE"]}
+        ),
+        "measurements": [{
+            "layer": "给水管", "measurement_kind": "length", "entity_type": "LINE",
+            "entity_handle": "A1", "normalized_value": None,
+        }],
+    }
+    ambiguous = {
+        "mapping_suggestions": suggest_layer_mappings(
+            ["给水管喷淋管"], "all", layer_entity_types={"给水管喷淋管": ["LINE"]}
+        ),
+        "measurements": [],
+    }
+
+    unknown_result = build_mapped_takeoff_candidates(unknown_unit)[0]
+    ambiguous_result = build_mapped_takeoff_candidates(ambiguous)[0]
+
+    assert unknown_result["status"] == "unit_confirmation_required"
+    assert unknown_result["quantity"] is None
+    assert ambiguous_result["status"] == "ambiguous_needs_manual_mapping"
+    assert ambiguous_result["quantity"] is None
+
+
+def test_block_count_mapping_sums_insert_evidence():
+    suggestions = suggest_layer_mappings(
+        ["配电箱"], "electrical", layer_entity_types={"配电箱": ["INSERT"]}
+    )
+    report = {
+        "mapping_suggestions": suggestions,
+        "measurements": [
+            {
+                "layer": "配电箱", "measurement_kind": "count", "entity_type": "INSERT",
+                "entity_handle": "C1", "normalized_value": "1",
+            },
+            {
+                "layer": "配电箱", "measurement_kind": "count", "entity_type": "INSERT",
+                "entity_handle": "C2", "normalized_value": "1",
+            },
+        ],
+    }
+
+    candidate = build_mapped_takeoff_candidates(report)[0]
+
+    assert candidate["quantity"] == 2
+    assert candidate["unit"] == "台"
+    assert candidate["confidence_class"] == "block_count"
