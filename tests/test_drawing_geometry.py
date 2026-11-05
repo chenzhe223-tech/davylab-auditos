@@ -86,3 +86,32 @@ def test_bulge_polyline_uses_arc_length_and_segment_area(tmp_path):
 
     assert math.isclose(float(layer["linear_length_m"]), math.pi + 2, rel_tol=1e-9)
     assert math.isclose(float(layer["closed_area_m2"]), math.pi / 2, rel_tol=1e-9)
+
+
+
+def test_tilted_planar_entities_are_not_used_for_plan_area(tmp_path):
+    path = tmp_path / "tilted.dxf"
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 4
+    model = doc.modelspace()
+    model.add_circle(
+        (0, 0, 0), radius=100,
+        dxfattribs={"layer": "TILTED-CIRCLE", "extrusion": (0, 1, 0)},
+    )
+    model.add_lwpolyline(
+        [(0, 0), (100, 0), (100, 100), (0, 100)],
+        close=True,
+        dxfattribs={"layer": "TILTED-BOUNDARY", "extrusion": (0, 1, 0)},
+    )
+    doc.saveas(path)
+
+    report = analyze_dxf_geometry(path)
+
+    assert not any(
+        item["layer"] == "TILTED-CIRCLE" and item["measurement_kind"] == "area"
+        for item in report["measurements"]
+    )
+    assert any(item.startswith("NON_HORIZONTAL_CIRCLE_AREA_WITHHELD")
+               for item in report["warnings"])
+    assert any(item.startswith("NON_HORIZONTAL_POLYLINE_NOT_MEASURED")
+               for item in report["warnings"])
