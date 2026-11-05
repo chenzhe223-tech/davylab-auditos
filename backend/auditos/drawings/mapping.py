@@ -6,6 +6,7 @@ classification. A project/company mapping must be reviewed before use.
 from __future__ import annotations
 
 import fnmatch
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel
@@ -214,3 +215,118 @@ def suggest_layer_mappings(
             ),
         })
     return suggestions
+
+
+
+def build_mapped_takeoff_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Aggregate geometry evidence through confirmed-shape mapping candidates.
+
+    This creates review candidates only. Ambiguous mappings, entity-type
+    mismatches, and unknown units never produce a numeric candidate quantity.
+    """
+    measurements = report.get("measurements", [])
+    results = []
+    for suggestion in report.get("mapping_suggestions", []):
+        candidates = suggestion.get("candidates", [])
+        if suggestion.get("status") != "candidate_needs_confirmation" or len(candidates) != 1:
+            results.append({
+                "layer": suggestion["layer"],
+                "status": suggestion.get("status", "unmapped"),
+                "quantity": None,
+                "requires_human_review": True,
+                "notice": suggestion.get("notice", "映射未确认。"),
+            })
+            continue
+
+        rule = candidates[0]
+        if rule.get("entity_type_check") == "entity_type_mismatch":
+            results.append({
+                "layer": suggestion["layer"],
+                "rule_id": rule["rule_id"],
+                "status": "entity_type_mismatch_needs_review",
+                "quantity": None,
+                "requires_human_review": True,
+                "notice": "图层实体类型不符合映射规则，未生成工程量。",
+            })
+            continue
+
+        expected_types = set(rule.get("entity_types", []))
+        rows = [
+            row for row in measurements
+            if row.get("layer") == suggestion["layer"]
+            and row.get("measurement_kind") == rule["measurement_kind"]
+            and (not expected_types or row.get("entity_type") in expected_types)
+        ]
+        if not rows:
+            results.append({
+                "layer": suggestion["layer"],
+                "rule_id": rule["rule_id"],
+                "status": "no_matching_measurements",
+                "quantity": None,
+                "requires_human_review": True,
+                "notice": "当前图层没有符合规则实体类型的测量证据。",
+            })
+            continue
+
+        kind = rule["measurement_kind"]
+        normalized_values = [row.get("normalized_value") for row in rows]
+        if kind in {"length", "area"} and any(value is None for value in normalized_values):
+            results.append({
+                "layer": suggestion["layer"],
+                "rule_id": rule["rule_id"],
+                "status": "unit_confirmation_required",
+                "quantity": None,
+                "requires_human_review": True,
+                "evidence_handles": [row.get("entity_handle") for row in rows],
+                "notice": "图纸单位未确认，保留原始测量值，不生成标准单位工程量。",
+            })
+            continue
+
+        quantity = sum(
+            (Decimal(str(value)) for value in normalized_values),
+            Decimal(0),
+        )
+        target_unit = str(rule["unit"])
+        if kind == "length":
+            unit_alias = UNIT_ALIASES.get(target_unit.lower(), target_unit.lower())
+            target_factor = UNIT_FACTORS.get(unit_alias)
+            if target_factor is None:
+                status = "unsupported_target_unit"
+                quantity_value = None
+            else:
+                quantity_value = quantity / target_factor
+                status = "candidate_for_human_review"
+        elif kind == "area":
+            area_units = {
+                "m2": Decimal(1), "m²": Decimal(1), "平方米": Decimal(1),
+                "cm2": Decimal("0.0001"), "cm²": Decimal("0.0001"),
+                "mm2": Decimal("0.000001"), "mm²": Decimal("0.000001"),
+            }
+            target_factor = area_units.get(target_unit.lower())
+            if target_factor is None:
+                status = "unsupported_target_unit"
+                quantity_value = None
+            else:
+                quantity_value = quantity / target_factor
+                status = "candidate_for_human_review"
+        else:
+            quantity_value = quantity
+            status = "candidate_for_human_review"
+
+        results.append({
+            "layer": suggestion["layer"],
+            "rule_id": rule["rule_id"],
+            "mapping_source": suggestion.get("mapping_source"),
+            "mapping_version": rule.get("version"),
+            "discipline": rule["discipline"],
+            "item_name": rule["item_name"],
+            "measurement_kind": kind,
+            "unit": target_unit,
+            "quantity": quantity_value,
+            "status": status,
+            "confidence_class": "block_count" if kind == "count" else "exact_geometry",
+            "evidence_handles": [row.get("entity_handle") for row in rows],
+            "requires_human_review": True,
+            "notice": "候选工程量仅用于人工复核；未应用正式定额、扣减或安装施工计量规则。",
+        })
+    return results
