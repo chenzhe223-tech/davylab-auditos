@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from auditos.api import routes
 from auditos.domain.models import ProjectCreate
-from auditos.drawings.models import EngineCapability, EngineId, DrawingTask
+from auditos.drawings.models import DrawingTask, EngineCapability, EngineId
 from auditos.main import app
 from auditos.storage.repository import ProjectRepository
 
