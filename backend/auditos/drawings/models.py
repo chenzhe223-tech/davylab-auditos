@@ -109,3 +109,15 @@ class DrawingAnalysisRequest(BaseModel):
     discipline: str = Field(default="all", max_length=40)
     layer_patterns: list[str] = Field(default_factory=list, max_length=100)
     source_unit_override: str | None = Field(default=None, max_length=40)
+
+
+
+class ProjectLayerMapping(BaseModel):
+    rule_id: str = Field(min_length=3, max_length=120)
+    discipline: str = Field(min_length=2, max_length=40)
+    item_name: str = Field(min_length=2, max_length=120)
+    measurement_kind: str = Field(pattern="^(length|area|count)$")
+    unit: str = Field(min_length=1, max_length=20)
+    layer_patterns: list[str] = Field(min_length=1, max_length=50)
+    entity_types: list[str] = Field(default_factory=list, max_length=30)
+    notes: str = Field(default="", max_length=1000)
