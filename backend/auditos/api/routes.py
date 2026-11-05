@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from auditos.audit_engine.settlement_checks import review_rows
 from auditos.domain.models import ProjectCreate, ProjectRead
 from auditos.drawings.adapters import DwgReaderAdapter
-from auditos.drawings.geometry import analyze_dxf_geometry
+from auditos.drawings.geometry import analyze_dxf_geometry, extract_entity_geometry
 from auditos.drawings.mapping import (
     build_mapped_takeoff_candidates,
     get_mapping_templates,
@@ -230,6 +230,50 @@ def list_drawing_analysis_runs(project_id: str, drawing_id: str) -> list[dict]:
     if repository.get_drawing(drawing_id, project_id) is None:
         raise HTTPException(status_code=404, detail="Drawing not found in this project")
     return repository.list_drawing_runs(drawing_id, project_id)
+
+
+@router.get(
+    "/projects/{project_id}/drawings/{drawing_id}/runs/{run_id}/entities/{entity_handle}",
+    tags=["drawings"],
+)
+def get_drawing_entity_evidence(
+    project_id: str, drawing_id: str, run_id: str, entity_handle: str
+) -> dict:
+    if repository.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    drawing = repository.get_drawing(drawing_id, project_id)
+    if drawing is None:
+        raise HTTPException(status_code=404, detail="Drawing not found in this project")
+    run = repository.get_drawing_run(run_id, drawing_id, project_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Drawing analysis run not found")
+
+    report = run["report"]
+    evidence_rows = [
+        item for item in report.get("measurements", [])
+        if str(item.get("entity_handle", "")).upper() == entity_handle.upper()
+    ]
+    if not evidence_rows:
+        raise HTTPException(status_code=404, detail="No measurement evidence for this entity Handle")
+
+    conversion = report.get("conversion") or {}
+    evidence_path = Path(conversion.get("converted_dxf") or drawing["stored_path"])
+    try:
+        entity = extract_entity_geometry(evidence_path, entity_handle)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="Source geometry is unavailable or changed") from exc
+    if entity["drawing_sha256"] != report.get("drawing_sha256"):
+        raise HTTPException(status_code=409, detail="Drawing content hash differs from analyzed revision")
+
+    return {
+        "project_id": project_id,
+        "drawing_id": drawing_id,
+        "run_id": run_id,
+        "source_drawing_sha256": report.get("source_drawing_sha256"),
+        "measurement_evidence": evidence_rows,
+        "entity": entity,
+        "requires_visual_review": True,
+    }
 
 
 @router.get(
