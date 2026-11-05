@@ -216,7 +216,7 @@ def test_revision_comparison_normalizes_units_and_persists_report(tmp_path):
     assert exported.status_code == 200
     workbook = load_workbook(BytesIO(exported.content), read_only=True)
     assert workbook.sheetnames == ["修订差异", "图层明细", "实体变化", "复核提示"]
-    assert workbook["实体变化"]["C2"].value == "modified_same_handle"
+    assert workbook["实体变化"]["B2"].value == "modified_same_handle"
     assert float(workbook["图层明细"]["E2"].value) == 0.5
 
 
