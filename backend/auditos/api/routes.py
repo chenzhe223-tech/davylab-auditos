@@ -31,7 +31,10 @@ from auditos.drawings.models import (
     ProjectLayerMapping,
     TakeoffRequest,
 )
-from auditos.drawings.revisions import compare_drawing_revision_reports
+from auditos.drawings.revisions import (
+    compare_drawing_revision_reports,
+    compare_dxf_entity_revisions,
+)
 from auditos.drawings.router import classify_task
 from auditos.drawings.service import engine_capabilities, plan_takeoff
 from auditos.ingestion.settlement_xlsx import read_settlement_xlsx
@@ -103,6 +106,26 @@ def compare_project_drawing_revisions(
         if target_report["drawing_sha256"] != target["sha256"]:
             raise ValueError("Target drawing hash changed after upload.")
         comparison = compare_drawing_revision_reports(base_report, target_report)
+        if base_report.get("source_unit") and target_report.get("source_unit"):
+            try:
+                comparison["entity_changes"] = compare_dxf_entity_revisions(
+                    Path(base["stored_path"]),
+                    Path(target["stored_path"]),
+                    base_report["source_unit"],
+                    target_report["source_unit"],
+                )
+            except (OSError, ValueError) as exc:
+                comparison["entity_changes"] = {
+                    "status": "entity_matching_unavailable",
+                    "error_type": type(exc).__name__,
+                    "note": "Layer-level quantity deltas remain available; entity matching requires manual review.",
+                }
+        else:
+            comparison["entity_changes"] = {
+                "status": "unit_confirmation_required",
+                "changes": [],
+                "note": "Entity matching requires confirmed units for both revisions.",
+            }
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"Revision comparison failed: {exc}") from exc
 
