@@ -1,9 +1,9 @@
 from io import BytesIO
-from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
+from auditos.api import routes
 from auditos.main import app
 from auditos.storage.repository import ProjectRepository
 
@@ -26,11 +26,9 @@ def make_workbook() -> bytes:
     return output.getvalue()
 
 
-def test_project_create_audit_and_export(tmp_path, monkeypatch):
-    from auditos.api import routes
+def test_project_create_audit_review_and_export(tmp_path):
     routes.repository = ProjectRepository(tmp_path / "api.sqlite3")
     client = TestClient(app)
-
     project = client.post("/api/projects", json={"name": "安装工程结算审核"})
     assert project.status_code == 200
     project_id = project.json()["id"]
@@ -63,7 +61,7 @@ def test_project_create_audit_and_export(tmp_path, monkeypatch):
 def test_upload_rejects_non_xlsx():
     client = TestClient(app)
     response = client.post(
-        "/api/projects/not-real/settlements/audit",
+        "/api/projects/unknown/settlements/audit",
         files={"file": ("source.csv", b"x,y", "text/csv")},
     )
     assert response.status_code == 404
