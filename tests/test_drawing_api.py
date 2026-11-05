@@ -201,6 +201,7 @@ def test_revision_comparison_normalizes_units_and_persists_report(tmp_path):
     assert report["target_source_unit"] == "cm"
     assert float(report["totals"]["delta_linear_length_m"]) == 0.5
     assert report["layers"][0]["status"] == "changed"
+    assert report["entity_changes"]["summary"]["modified_same_handle"] == 1
 
     history = client.get(
         f"/api/projects/{project.id}/drawings/revision-comparisons"
@@ -214,7 +215,8 @@ def test_revision_comparison_normalizes_units_and_persists_report(tmp_path):
     )
     assert exported.status_code == 200
     workbook = load_workbook(BytesIO(exported.content), read_only=True)
-    assert workbook.sheetnames == ["修订差异", "图层明细", "复核提示"]
+    assert workbook.sheetnames == ["修订差异", "图层明细", "实体变化", "复核提示"]
+    assert workbook["实体变化"]["C2"].value == "modified_same_handle"
     assert float(workbook["图层明细"]["E2"].value) == 0.5
 
 
