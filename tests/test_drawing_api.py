@@ -151,3 +151,94 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     assert workbook["算量候选"]["F2"].value == "2.1"
     assert workbook["实体证据"]["A2"].value
     assert workbook["复核记录"]["B2"].value in {"adjusted", "confirmed"}
+
+
+
+def test_revision_comparison_normalizes_units_and_persists_report(tmp_path):
+    routes.repository = ProjectRepository(tmp_path / "revision-api.sqlite3")
+    client = TestClient(app)
+    project = routes.repository.create_project(ProjectCreate(name="Revision compare"))
+
+    base_path = tmp_path / "base.dxf"
+    base_doc = ezdxf.new()
+    base_doc.header["$INSUNITS"] = 4
+    base_doc.modelspace().add_line(
+        (0, 0), (1000, 0), dxfattribs={"layer": "E-TRAY"}
+    )
+    base_doc.saveas(base_path)
+
+    target_path = tmp_path / "target.dxf"
+    target_doc = ezdxf.new()
+    target_doc.header["$INSUNITS"] = 5
+    target_doc.modelspace().add_line(
+        (0, 0), (150, 0), dxfattribs={"layer": "E-TRAY"}
+    )
+    target_doc.saveas(target_path)
+
+    base_upload = client.post(
+        f"/api/projects/{project.id}/drawings/upload",
+        files={"file": ("base.dxf", base_path.read_bytes(), "application/dxf")},
+        data={"revision": "A"},
+    )
+    target_upload = client.post(
+        f"/api/projects/{project.id}/drawings/upload",
+        files={"file": ("target.dxf", target_path.read_bytes(), "application/dxf")},
+        data={"revision": "B"},
+    )
+    assert base_upload.status_code == 200
+    assert target_upload.status_code == 200
+
+    compared = client.post(
+        f"/api/projects/{project.id}/drawings/compare-revisions",
+        json={
+            "base_drawing_id": base_upload.json()["id"],
+            "target_drawing_id": target_upload.json()["id"],
+        },
+    )
+    assert compared.status_code == 200
+    report = compared.json()["report"]
+    assert report["base_source_unit"] == "mm"
+    assert report["target_source_unit"] == "cm"
+    assert float(report["totals"]["delta_linear_length_m"]) == 0.5
+    assert report["layers"][0]["status"] == "changed"
+
+    history = client.get(
+        f"/api/projects/{project.id}/drawings/revision-comparisons"
+    )
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+
+
+def test_revision_comparison_blocks_unknown_units_for_linear_geometry(tmp_path):
+    routes.repository = ProjectRepository(tmp_path / "revision-unknown.sqlite3")
+    client = TestClient(app)
+    project = routes.repository.create_project(ProjectCreate(name="Unknown units"))
+
+    paths = []
+    for filename in ("base-unknown.dxf", "target-unknown.dxf"):
+        path = tmp_path / filename
+        doc = ezdxf.new()
+        doc.header["$INSUNITS"] = 0
+        doc.modelspace().add_line((0, 0), (100, 0), dxfattribs={"layer": "P-PIPE"})
+        doc.saveas(path)
+        paths.append(path)
+
+    uploads = [
+        client.post(
+            f"/api/projects/{project.id}/drawings/upload",
+            files={"file": (path.name, path.read_bytes(), "application/dxf")},
+        )
+        for path in paths
+    ]
+    assert all(response.status_code == 200 for response in uploads)
+
+    compared = client.post(
+        f"/api/projects/{project.id}/drawings/compare-revisions",
+        json={
+            "base_drawing_id": uploads[0].json()["id"],
+            "target_drawing_id": uploads[1].json()["id"],
+        },
+    )
+
+    assert compared.status_code == 422
+    assert "unit is unknown" in compared.json()["detail"]
