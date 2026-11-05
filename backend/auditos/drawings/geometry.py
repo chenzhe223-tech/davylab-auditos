@@ -104,7 +104,7 @@ def _polyline_geometry(entity: Any) -> tuple[float, float | None, bool]:
     for index in range(segment_count):
         next_index = (index + 1) % len(points)
         length += _segment_length(points[index], points[next_index], vertices[index][2])
-    if not closed or len(points) < 3:
+    if not closed:
         return length, None, True
     signed_area = sum(
         points[i][0] * points[(i + 1) % len(points)][1]
