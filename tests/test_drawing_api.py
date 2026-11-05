@@ -53,7 +53,7 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     doc = ezdxf.new()
     doc.header["$INSUNITS"] = 4
     doc.modelspace().add_line(
-        (0, 0), (2000, 0), dxfattribs={"layer": "M-PIPE"}
+        (0, 0), (2000, 0), dxfattribs={"layer": "给水管"}
     )
     doc.saveas(drawing_path)
 
@@ -72,17 +72,20 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
         f"/api/projects/{project.id}/drawings/{drawing['id']}/analyze",
         json={
             "task_description": "统计管道长度",
-            "layer_patterns": ["M-PIPE"],
+            "layer_patterns": ["给水管"],
+            "discipline": "plumbing",
         },
     )
     assert analyzed.status_code == 200
     run = analyzed.json()
     assert run["engine_id"] == EngineId.NATIVE.value
     layer = run["report"]["layers"][0]
-    assert layer["layer"] == "M-PIPE"
+    assert layer["layer"] == "给水管"
     assert float(layer["linear_length_m"]) == 2.0
     assert run["report"]["source_drawing_sha256"] == drawing["sha256"]
     assert run["report"]["drawing_revision"] == "A"
+    assert run["report"]["mapping_suggestions"][0]["status"] == "candidate_needs_confirmation"
+    assert run["report"]["mapping_suggestions"][0]["candidates"][0]["rule_id"] == "plumbing.water_supply.length"
     assert len(run["report"]["measurements"]) == 1
     assert run["report"]["measurements"][0]["entity_handle"]
 
