@@ -114,6 +114,8 @@ def _polyline_geometry(entity: Any) -> tuple[float, float | None, bool]:
         length += _segment_length(points[index], points[next_index], vertices[index][2])
     if not closed:
         return length, None, True
+    if len(points) < 3 and not any(abs(vertex[2]) >= 1e-12 for vertex in vertices):
+        return length, None, True
     signed_area = sum(
         points[i][0] * points[(i + 1) % len(points)][1]
         - points[(i + 1) % len(points)][0] * points[i][1]
@@ -271,6 +273,10 @@ def analyze_dxf_geometry(
 
     if source_unit is None:
         warnings.append("UNIT_UNKNOWN: normalized metric quantities withheld; confirm drawing units.")
+    if not measurements:
+        warnings.append("NO_MEASURABLE_ENTITIES_FOUND_FOR_SELECTED_LAYERS.")
+    if patterns and not totals:
+        warnings.append("LAYER_FILTER_MATCHED_NO_ENTITIES.")
     if unsupported:
         warnings.append("UNSUPPORTED_ENTITY_TYPES:" + ",".join(
             f"{name}={count}" for name, count in sorted(unsupported.items())
