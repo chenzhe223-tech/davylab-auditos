@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from auditos.drawings.geometry import UNIT_ALIASES, UNIT_FACTORS
+
 
 class LayerMappingRule(BaseModel):
     rule_id: str
