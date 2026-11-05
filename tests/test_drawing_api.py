@@ -82,6 +82,8 @@ def test_upload_and_analyze_dxf_persists_entity_evidence(tmp_path):
     assert analyzed.status_code == 200
     run = analyzed.json()
     assert run["engine_id"] == EngineId.NATIVE.value
+    assert "external_engine_runs" in run["report"]
+    assert "cross_engine_comparison" in run["report"]
     layer = run["report"]["layers"][0]
     assert layer["layer"] == "给水管"
     assert float(layer["linear_length_m"]) == 2.0
