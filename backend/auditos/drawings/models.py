@@ -100,3 +100,11 @@ class TakeoffCandidate(BaseModel):
     confidence_class: ConfidenceClass
     warnings: list[str] = Field(default_factory=list)
     formula: str
+
+
+
+class DrawingAnalysisRequest(BaseModel):
+    task_description: str = Field(min_length=3, max_length=2000)
+    measurement_kind: str = Field(default="auto", max_length=80)
+    layer_patterns: list[str] = Field(default_factory=list, max_length=100)
+    source_unit_override: str | None = Field(default=None, max_length=40)
