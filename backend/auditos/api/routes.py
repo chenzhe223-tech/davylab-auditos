@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 
 from auditos.audit_engine.settlement_checks import review_rows
 from auditos.domain.models import ProjectCreate, ProjectRead
-from auditos.drawings.adapters import DwgReaderAdapter
+from auditos.drawings.adapters import CadAiAgentAdapter, DwgReaderAdapter, DxfCivilAdapter
+from auditos.drawings.crosscheck import compare_dxf_civil_takeoff
 from auditos.drawings.geometry import analyze_dxf_geometry, extract_entity_geometry
 from auditos.drawings.mapping import (
     build_mapped_takeoff_candidates,
@@ -197,12 +198,83 @@ def analyze_uploaded_drawing(
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"Drawing analysis failed: {exc}") from exc
 
+    external_engine_runs = []
+    cross_engine_comparison = {
+        "status": "disabled" if not payload.include_external_crosschecks else "not_available",
+        "note": "没有可用的 DXF Civil 交叉检查结果；原生算量仍独立保留。",
+    }
+    if conversion_result:
+        external_engine_runs.append({
+            "engine": "dwg_reader",
+            "status": "completed",
+            "candidate_only": True,
+            "result": conversion_result,
+        })
+
+    if payload.include_external_crosschecks:
+        external_adapters = [
+            DwgReaderAdapter(),
+            CadAiAgentAdapter(),
+            DxfCivilAdapter(),
+        ]
+        for adapter in external_adapters:
+            if adapter.engine_id.value == "dwg_reader" and conversion_result:
+                continue
+            capability = adapter.probe()
+            if not capability.installed:
+                external_engine_runs.append({
+                    "engine": adapter.engine_id.value,
+                    "status": "not_installed",
+                    "candidate_only": True,
+                    "warnings": capability.warnings,
+                })
+                continue
+            if task not in capability.available_tasks:
+                external_engine_runs.append({
+                    "engine": adapter.engine_id.value,
+                    "status": "unsupported_task",
+                    "candidate_only": True,
+                })
+                continue
+            try:
+                engine_result = adapter.execute(
+                    task, measurement_path, run_dir / adapter.engine_id.value
+                )
+            except Exception as exc:
+                external_engine_runs.append({
+                    "engine": adapter.engine_id.value,
+                    "status": "failed",
+                    "candidate_only": True,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:1000],
+                })
+                continue
+            external_engine_runs.append({
+                "engine": adapter.engine_id.value,
+                "status": "completed",
+                "candidate_only": True,
+                "result": engine_result,
+            })
+            if adapter.engine_id.value == "dxf_civil" and engine_result.get("report"):
+                try:
+                    cross_engine_comparison = compare_dxf_civil_takeoff(
+                        report, engine_result["report"]
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    cross_engine_comparison = {
+                        "status": "normalization_failed",
+                        "error_type": type(exc).__name__,
+                        "note": "保留两引擎原始结果，不进行数值对比。",
+                    }
+
     report["project_id"] = project_id
     report["drawing_id"] = drawing_id
     report["source_filename"] = drawing["filename"]
     report["source_drawing_sha256"] = drawing["sha256"]
     report["drawing_revision"] = drawing.get("revision")
     report["task"] = task.value if hasattr(task, "value") else str(task)
+    report["external_engine_runs"] = external_engine_runs
+    report["cross_engine_comparison"] = cross_engine_comparison
     report["mapping_suggestions"] = suggest_layer_mappings(
         [item["layer"] for item in report["layers"]],
         payload.discipline,
