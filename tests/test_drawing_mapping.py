@@ -51,3 +51,20 @@ def test_project_mapping_is_versioned_and_overrides_template(tmp_path):
     assert result["mapping_source"] == "project_custom"
     assert result["candidates"][0]["item_name"] == "项目自定义给水管"
     assert result["candidates"][0]["version"] == 2
+
+
+
+def test_mapping_checks_actual_entity_types_before_acceptance():
+    result = suggest_layer_mappings(
+        ["给水管", "给水管-文字"],
+        "plumbing",
+        layer_entity_types={
+            "给水管": ["LINE", "LWPOLYLINE"],
+            "给水管-文字": ["TEXT", "MTEXT"],
+        },
+    )
+    by_layer = {item["layer"]: item for item in result}
+
+    assert by_layer["给水管"]["status"] == "candidate_needs_confirmation"
+    assert by_layer["给水管"]["candidates"][0]["entity_type_check"] == "compatible"
+    assert by_layer["给水管-文字"]["status"] == "entity_type_mismatch_needs_review"
