@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -125,3 +126,11 @@ class ProjectLayerMapping(BaseModel):
     layer_patterns: list[str] = Field(min_length=1, max_length=50)
     entity_types: list[str] = Field(default_factory=list, max_length=30)
     notes: str = Field(default="", max_length=1000)
+
+
+
+class CandidateReviewRequest(BaseModel):
+    decision: Literal["confirmed", "adjusted", "rejected"]
+    reviewed_quantity: Decimal | None = Field(default=None, ge=0)
+    note: str = Field(default="", max_length=1000)
+    reviewer: str = Field(default="local_user", min_length=2, max_length=80)
