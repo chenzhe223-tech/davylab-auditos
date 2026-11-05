@@ -39,22 +39,25 @@ def route_drawing_task(request: TakeoffRequest) -> DrawingRouteDecision:
     ]
     if extension == ".dwg":
         primary = EngineId.DWG_READER
-        reasons.append("DWG 需先经过本地 ODA 转换，再进行结构解析。")
-        secondary = (
-            [EngineId.CAD_AI_AGENT, EngineId.DXF_CIVIL]
-            if task in {DrawingTask.AREA_TAKEOFF, DrawingTask.LINEAR_TAKEOFF, DrawingTask.COMPLEX_ANALYSIS}
-            else [EngineId.DXF_CIVIL]
-        )
+        reasons.append("DWG Reader 负责受控 DWG→DXF 转换和图纸结构读取；正式几何量由 AuditOS 原生内核重算。")
+        secondary = [EngineId.NATIVE, EngineId.DXF_CIVIL]
+        if task in {DrawingTask.AREA_TAKEOFF, DrawingTask.LINEAR_TAKEOFF, DrawingTask.COMPLEX_ANALYSIS}:
+            secondary.append(EngineId.CAD_AI_AGENT)
     elif extension == ".dxf":
-        if task in {DrawingTask.SPATIAL_REVIEW, DrawingTask.VISUAL_REVIEW, DrawingTask.AREA_TAKEOFF}:
+        if task in {DrawingTask.AREA_TAKEOFF, DrawingTask.LINEAR_TAKEOFF, DrawingTask.BLOCK_COUNT}:
+            primary = EngineId.NATIVE
+            secondary = [EngineId.DWG_READER, EngineId.DXF_CIVIL, EngineId.CAD_AI_AGENT]
+            reasons.append("DXF 测量由 AuditOS 确定性几何内核负责；外部引擎仅作独立交叉检查。")
+        elif task in {DrawingTask.SPATIAL_REVIEW, DrawingTask.VISUAL_REVIEW}:
             primary = EngineId.DXF_CIVIL
-            secondary = [EngineId.DWG_READER, EngineId.CAD_AI_AGENT]
+            secondary = [EngineId.DWG_READER]
+            reasons.append("空间筛查/渲染优先使用 DXF Civil 的专用只读工具。")
         elif task == DrawingTask.COMPLEX_ANALYSIS:
             primary = EngineId.CAD_AI_AGENT
-            secondary = [EngineId.DWG_READER, EngineId.DXF_CIVIL]
+            secondary = [EngineId.NATIVE, EngineId.DWG_READER, EngineId.DXF_CIVIL]
         else:
             primary = EngineId.DWG_READER
-            secondary = [EngineId.DXF_CIVIL]
+            secondary = [EngineId.NATIVE, EngineId.DXF_CIVIL]
     else:
         primary = EngineId.NATIVE
         secondary = []
