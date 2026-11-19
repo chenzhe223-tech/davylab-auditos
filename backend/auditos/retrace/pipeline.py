@@ -205,6 +205,9 @@ def build_dxf(out_path: Path, frame, scale, unit, v_parts, h_parts,
     import ezdxf
     from ezdxf.enums import TextEntityAlignment
 
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
     doc = ezdxf.new("R2010", setup=True)
     doc.header["$INSUNITS"] = INSUNITS[unit]
     doc.header["$MEASUREMENT"] = 1 if unit == "mm" else 0
@@ -363,8 +366,16 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
                             "v_partitions_px": v_parts, "h_partitions_px": h_parts,
                             "frame_px": frame},
              "calibration": {"scale_mm_per_px": round(scale_val, 6), "unit": unit,
-                             "unit_source": "assumed" if declare_mm_assumed
-                             else ("declared" if unit != "unitless" else "unitless-uncalibrated")},
+                             "unit_source": (
+                                 "standard-default" if (unit == "mm" and not declare_mm_assumed)
+                                 else "assumed" if declare_mm_assumed
+                                 else "declared" if unit != "unitless"
+                                 else "unitless-uncalibrated"),
+                             "unit_basis": (
+                                 "ISO 129-1:1985 §3.2.4 / GB/T 4458.4-2003 §1.2.1: "
+                                 "dimensions in mm carry no unit symbol; other units "
+                                 "must be explicitly annotated (none present)"
+                                 ) if unit == "mm" else None},
              "residuals": resid,
              "audit": aud}
     evidence_path = out_dxf_path.with_suffix(".evidence.json")

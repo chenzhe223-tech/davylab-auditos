@@ -79,7 +79,8 @@
         <div>
           <label>单位声明</label>
           <select id="unit">
-            <option value="mm-assumed">mm（假设，图面未标）</option>
+            <option value="mm-standard">mm（标准默认：图面未标单位 → ISO 129 / GB/T 4458.4）</option>
+            <option value="mm-assumed">mm（人工假设）</option>
             <option value="mm-declared">mm（已确认）</option>
             <option value="unitless">无单位（仅描迹）</option>
           </select>
@@ -158,7 +159,7 @@ $("go").onclick = async () => {
   const fd = new FormData();
   fd.append("file", f);
   const unit = $("unit").value;
-  fd.append("unit", unit === "mm-declared" ? "mm" : (unit === "mm-assumed" ? "mm" : "unitless"));
+  fd.append("unit", unit === "mm-declared" ? "mm" : (unit === "mm-assumed" ? "mm" : (unit === "mm-standard" ? "mm" : "unitless")));
   fd.append("declare_mm_assumed", unit === "mm-assumed");
   if ($("width_mm").value) fd.append("width_mm", $("width_mm").value);
   if ($("height_mm").value) fd.append("height_mm", $("height_mm").value);
