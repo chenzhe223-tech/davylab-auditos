@@ -24,7 +24,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CODE_VERSION = "davylab-cad-round1-r1"
+CODE_VERSION = "davylab-cad-round4-r1"
 INSUNITS = {"mm": 4, "cm": 5, "m": 6, "unitless": 0}
 
 
@@ -60,7 +60,45 @@ def binarize(img) -> np.ndarray:
     return mask
 
 
-def extract_structural_lines(mask: np.ndarray, min_len_frac: float = 0.05):
+def stitch_collinear(lines, kind: str, gap_tol: int = 14):
+    """Merge same-row/column segments separated by small gaps (door/window
+    openings, scan dropouts). lines are [x0, x1, y] (kind='h') or
+    [x, y0, y1] (kind='v'); coordinates must already be on the same axis."""
+    merged: list[list[int]] = []
+    if kind == "h":
+        # group by y (tolerance 3px), then merge within each row
+        rows: dict[int, list[list[int]]] = {}
+        for x0, x1, y in sorted(lines, key=lambda t: (round(t[2] / 3), t[0])):
+            rows.setdefault(round(y / 3), []).append([x0, x1, y])
+        for _key, segs in rows.items():
+            segs.sort(key=lambda t: t[0])
+            cur = segs[0]
+            for nxt in segs[1:]:
+                if nxt[0] - cur[1] <= gap_tol:
+                    cur[1] = max(cur[1], nxt[1])
+                else:
+                    merged.append(cur)
+                    cur = nxt
+            merged.append(cur)
+    else:
+        cols: dict[int, list[list[int]]] = {}
+        for x, y0, y1 in sorted(lines, key=lambda t: (round(t[0] / 3), t[1])):
+            cols.setdefault(round(x / 3), []).append([x, y0, y1])
+        for _key, segs in cols.items():
+            segs.sort(key=lambda t: t[1])
+            cur = segs[0]
+            for nxt in segs[1:]:
+                if nxt[1] - cur[2] <= gap_tol:
+                    cur[2] = max(cur[2], nxt[2])
+                else:
+                    merged.append(cur)
+                    cur = nxt
+            merged.append(cur)
+    return merged
+
+
+def extract_structural_lines(mask: np.ndarray, min_len_frac: float = 0.05,
+                             stitch_gap: int = 14):
     """Morphological extraction of long horizontal/vertical lines.
 
     Returns (h_lines, v_lines, frame_bbox, n_contours) where h/v_lines are
@@ -84,6 +122,8 @@ def extract_structural_lines(mask: np.ndarray, min_len_frac: float = 0.05):
                 h_lines.append([int(x), int(x + bw), int(y + bh / 2)])
             elif kind == "v" and bh >= min_len:
                 v_lines.append([int(x + bw / 2), int(y), int(y + bh)])
+    h_lines = stitch_collinear(h_lines, "h", stitch_gap)
+    v_lines = stitch_collinear(v_lines, "v", stitch_gap)
     frame = _frame_bbox(mask, h_lines, v_lines, w_px, h_px)
     if frame is not None:
         frame = _refine_frame_edges(h_lines, v_lines, frame)
@@ -169,6 +209,95 @@ def horizontal_partitions(h_lines, frame, tol=8):
     return cluster_positions(ys, tol)
 
 
+def extract_interior(mask: np.ndarray, frame, v_parts, h_parts,
+                     min_len_frac: float = 0.02, gap_tol: int = 10):
+    """PRODUCT-layer tracing: medium/short straight lines inside the frame
+    that are NOT structure edges or partitions (shelves, back panels,
+    product-zone outlines), plus closed rectangular contours (product boxes).
+
+    Returns (interior_h, interior_v, product_boxes, recall) where
+    interior_* are pixel segments and recall is the fraction of interior
+    ink (structure/partition pixels excluded) covered by emitted segments.
+    """
+    x0, y0, x1, y1 = frame
+    fx0, fy0 = int(x0), int(y0)
+    fx1, fy1 = int(x1), int(y1)
+    sub = mask[fy0:fy1, fx0:fx1]
+    fh, fw = sub.shape[:2]
+
+    part_x = {p for p, _ in v_parts}
+    part_y = {p for p, _ in h_parts}
+
+    # medium-length morphology pass (shorter kernels than structural pass)
+    min_len = max(int(min(fh, fw) * min_len_frac), 9)
+    hk = cv2.getStructuringElement(cv2.MORPH_RECT, (min_len, 1))
+    vk = cv2.getStructuringElement(cv2.MORPH_RECT, (1, min_len))
+    hmask = cv2.morphologyEx(sub, cv2.MORPH_OPEN, hk)
+    vmask = cv2.morphologyEx(sub, cv2.MORPH_OPEN, vk)
+
+    interior_h, interior_v = [], []
+    for m, kind in ((hmask, "h"), (vmask, "v")):
+        n, _labels, stats, _ = cv2.connectedComponentsWithStats(m, 8)
+        for i in range(1, n):
+            x, y, bw, bh, area = stats[i]
+            if kind == "h":
+                y_abs, xa, xb = fy0 + y + bh // 2, fx0 + x, fx0 + x + bw
+                span = bw
+                near_axis = (any(abs(y_abs - p) <= 5 for p in part_y)
+                             or y_abs <= fy0 + 5 or y_abs >= fy1 - 5)
+            else:
+                x_abs, ya, yb = fx0 + x + bw // 2, fy0 + y, fy0 + y + bh
+                span = bh
+                near_axis = (any(abs(x_abs - p) <= 5 for p in part_x)
+                             or x_abs <= fx0 + 5 or x_abs >= fx1 - 5)
+            if span < min_len:
+                continue
+            if near_axis and span >= 0.5 * (fw if kind == "h" else fh):
+                continue  # structure edge or partition — already emitted
+            (interior_h if kind == "h" else interior_v).append(
+                [xa, xb, y_abs] if kind == "h" else [x_abs, ya, yb])
+    interior_h = stitch_collinear(interior_h, "h", gap_tol)
+    interior_v = stitch_collinear(interior_v, "v", gap_tol)
+
+    # closed rectangular contours: line-drawn rooms/shelves appear as INNER
+    # contours of the frame in the hierarchy (RETR_CCOMP), so detect on the
+    # full sub-mask; a bounded morphological close bridges door/window gaps
+    # (detection only — the emitted line segments remain unstitched)
+    close_k = max(int(0.025 * max(fh, fw)), 9)
+    closed = cv2.morphologyEx(sub, cv2.MORPH_CLOSE,
+                              cv2.getStructuringElement(
+                                  cv2.MORPH_RECT, (close_k, close_k)))
+    cnts, hierarchy = cv2.findContours(closed, cv2.RETR_CCOMP,
+                                       cv2.CHAIN_APPROX_SIMPLE)
+    product_boxes = []
+    min_box_area = 0.004 * fh * fw
+    max_box_area = 0.85 * fh * fw  # exclude the frame rectangle itself
+    for c in (cnts or []):
+        area = cv2.contourArea(c)
+        if area < min_box_area or area > max_box_area:
+            continue
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        if len(approx) == 4:
+            bx, by, bw2, bh2 = cv2.boundingRect(approx)
+            product_boxes.append([fx0 + bx, fy0 + by,
+                                  fx0 + bx + bw2, fy0 + by + bh2])
+
+    # recall: interior ink (structure/partition pixels excluded) covered
+    # by emitted PRODUCT segments (dilated by 3px tolerance)
+    structure = cv2.bitwise_or(hmask, vmask)
+    emitted = np.zeros_like(sub)
+    for xa, xb, y_abs in interior_h:
+        cv2.line(emitted, (xa - fx0, y_abs - fy0), (xb - fx0, y_abs - fy0), 255, 3)
+    for x_abs, ya, yb in interior_v:
+        cv2.line(emitted, (x_abs - fx0, ya - fy0), (x_abs - fx0, yb - fy0), 255, 3)
+    ink = cv2.bitwise_and(sub, cv2.bitwise_not(structure))
+    interior_ink = int((ink > 0).sum())
+    covered = int(((ink > 0) & (emitted > 0)).sum())
+    recall = round(covered / interior_ink, 4) if interior_ink else None
+    return interior_h, interior_v, product_boxes, recall
+
+
 def anchor_residuals(v_parts, h_parts, frame, scale, expected_chain=None,
                      expected_w=None, expected_h=None):
     """Compute mm-space residuals for declared anchors. scale = mm per px."""
@@ -200,7 +329,8 @@ def anchor_residuals(v_parts, h_parts, frame, scale, expected_chain=None,
 
 
 def build_dxf(out_path: Path, frame, scale, unit, v_parts, h_parts,
-              product_boxes=None, labels=None, dims=None):
+              product_boxes=None, labels=None, dims=None, interior_h=None,
+              interior_v=None):
     """Construct DXF with explicit layers, $INSUNITS and native DIMENSIONs."""
     import ezdxf
     from ezdxf.enums import TextEntityAlignment
@@ -235,6 +365,13 @@ def build_dxf(out_path: Path, frame, scale, unit, v_parts, h_parts,
         msp.add_lwpolyline([(X(bx0), Y(by1)), (X(bx1), Y(by1)),
                             (X(bx1), Y(by0)), (X(bx0), Y(by0))], close=True,
                            dxfattribs={"layer": "PRODUCT"})
+    # interior detail lines (shelves, panels, product zones)
+    for xa, xb, y_abs in (interior_h or []):
+        msp.add_line((X(xa), Y(y_abs)), (X(xb), Y(y_abs)),
+                     dxfattribs={"layer": "PRODUCT"})
+    for x_abs, ya, yb in (interior_v or []):
+        msp.add_line((X(x_abs), Y(ya)), (X(x_abs), Y(yb)),
+                     dxfattribs={"layer": "PRODUCT"})
     # human-entered text labels
     for (tx, ty, txt, hpx) in (labels or []):
         msp.add_text(txt, dxfattribs={"layer": "TEXT", "height": hpx * scale}
@@ -312,7 +449,8 @@ def record_run(input_path, out_paths, extra, record_path, command):
 
 def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
         scale=1.0, width_mm=None, height_mm=None, chain_mm=None,
-        emit_dims=False, labels=None, preview_png=None) -> dict:
+        emit_dims=False, labels=None, preview_png=None,
+        evidence_path=None) -> dict:
     """Programmatic entry point. Returns the evidence record dict.
 
     Writes: DXF at out_dxf_path, evidence JSON next to it, optional preview PNG.
@@ -335,6 +473,8 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
         scale_val = scale or 1.0
     v_parts = vertical_partitions(v_lines, frame)
     h_parts = horizontal_partitions(h_lines, frame)
+    interior_h, interior_v, product_boxes, interior_recall = extract_interior(
+        mask, frame, v_parts, h_parts)
     resid = anchor_residuals(v_parts, h_parts, frame, scale_val,
                              expected_chain=chain_mm,
                              expected_w=width_mm, expected_h=height_mm)
@@ -353,7 +493,8 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
         dims.append({"kind": "v", "y1": 0, "y2": H, "lx": W, "base_x": W + off})
 
     doc = build_dxf(out_dxf_path, frame, scale_val, unit, v_parts, h_parts,
-                    product_boxes=None, labels=labels, dims=dims)
+                    product_boxes=product_boxes, labels=labels, dims=dims,
+                    interior_h=interior_h, interior_v=interior_v)
     aud = audit_dxf(out_dxf_path)
     out_paths = {str(out_dxf_path): str(out_dxf_path)}
     if preview_png:
@@ -364,7 +505,11 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
              "extraction": {"h_lines": len(h_lines), "v_lines": len(v_lines),
                             "contours_non_line": n_contours,
                             "v_partitions_px": v_parts, "h_partitions_px": h_parts,
-                            "frame_px": frame},
+                            "frame_px": frame,
+                            "interior_h_segments": len(interior_h),
+                            "interior_v_segments": len(interior_v),
+                            "product_boxes": product_boxes,
+                            "interior_ink_recall": interior_recall},
              "calibration": {"scale_mm_per_px": round(scale_val, 6), "unit": unit,
                              "unit_source": (
                                  "standard-default" if (unit == "mm" and not declare_mm_assumed)
@@ -378,7 +523,8 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
                                  ) if unit == "mm" else None},
              "residuals": resid,
              "audit": aud}
-    evidence_path = out_dxf_path.with_suffix(".evidence.json")
+    evidence_path = Path(evidence_path) if evidence_path else \
+        out_dxf_path.with_suffix(".evidence.json")
     rec = record_run(image_path, out_paths, extra, evidence_path,
                      "retrace.run(programmatic)")
     rec["artifact_paths"] = {"dxf": str(out_dxf_path), "evidence": str(evidence_path),
@@ -413,7 +559,7 @@ def main():
               declare_mm_assumed=args.declare_mm_assumed, scale=args.scale,
               width_mm=args.width_mm, height_mm=args.height_mm,
               chain_mm=args.chain_mm, emit_dims=args.dims, labels=labels,
-              preview_png=args.png)
+              preview_png=args.png, evidence_path=args.evidence)
     print(json.dumps({k: rec[k] for k in ("code_version", "calibration", "residuals", "audit")},
                      indent=2, ensure_ascii=False))
 
