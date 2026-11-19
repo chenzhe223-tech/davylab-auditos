@@ -231,6 +231,22 @@ def get_retrace_artifact(job_id: str, kind: str) -> FileResponse:
     return FileResponse(path, filename=path.name)
 
 
+class RetraceReviewRequest(BaseModel):
+    decision: str  # "approve" | "reject"
+    reviewer: str = ""
+    note: str = ""
+
+
+@router.post("/retrace/jobs/{job_id}/review", tags=RETRACE_TAGS)
+def review_retrace_job(job_id: str, body: RetraceReviewRequest) -> dict:
+    """Human review gate: approve or reject a finished retrace job."""
+    try:
+        return get_service().review_job(job_id, body.decision,
+                                        body.reviewer, body.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/retrace/workbench", tags=RETRACE_TAGS, include_in_schema=False)
 def retrace_workbench() -> HTMLResponse:
     page = Path(__file__).resolve().parents[1] / "retrace" / "workbench.html"

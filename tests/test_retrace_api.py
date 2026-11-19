@@ -99,3 +99,60 @@ def test_job_listing_and_missing(tmp_path, fixture_png):
     assert listed.status_code == 200 and isinstance(listed.json(), list)
     assert client.get("/api/retrace/jobs/does-not-exist").status_code == 404
     assert client.get("/api/retrace/jobs/does-not-exist/artifacts/dxf").status_code == 404
+
+
+def _create_job(fixture_png, **overrides):
+    data = {
+        "unit": "mm", "declare_mm_assumed": "true",
+        "width_mm": "1000", "height_mm": "600",
+        "chain_mm": "500,500", "emit_dims": "true", "want_dwg": "false",
+    }
+    data.update(overrides)
+    data = {k: v for k, v in data.items() if v is not None}  # omit = uncalibrated
+    r = client.post(
+        "/api/retrace/jobs",
+        files={"file": ("fixture.png", fixture_png, "image/png")}, data=data)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_review_gate_auto_pass_then_human_confirm(fixture_png):
+    job = _create_job(fixture_png)
+    assert job["status"] == "done"
+    assert job["review_state"] == "auto-pass"
+    assert "within" in job["evidence"]["review_gate"]["reason"]
+
+    r = client.post(f"/api/retrace/jobs/{job['id']}/review",
+                    json={"decision": "approve", "reviewer": "davy", "note": "ok"})
+    assert r.status_code == 200
+    reviewed = r.json()
+    assert reviewed["review_state"] == "approved"
+    assert reviewed["reviewer"] == "davy" and reviewed["reviewed_at"]
+
+    # re-review is rejected
+    r2 = client.post(f"/api/retrace/jobs/{job['id']}/review",
+                     json={"decision": "reject", "reviewer": "x"})
+    assert r2.status_code == 400
+
+
+def test_review_gate_needs_review_on_out_of_tolerance(fixture_png):
+    # declare width 2000 mm against a 1000 mm frame -> huge residual
+    job = _create_job(fixture_png, width_mm="2000")
+    assert job["status"] == "done"
+    assert job["review_state"] == "needs-review"
+    gate = job["evidence"]["review_gate"]
+    assert "exceeds" in gate["reason"]
+
+    r = client.post(f"/api/retrace/jobs/{job['id']}/review",
+                    json={"decision": "reject", "reviewer": "davy",
+                          "note": "residual out of tolerance"})
+    assert r.status_code == 200
+    assert r.json()["review_state"] == "rejected"
+
+
+def test_review_gate_needs_review_when_uncalibrated(fixture_png):
+    job = _create_job(fixture_png, unit="unitless", declare_mm_assumed="false",
+                      width_mm=None, height_mm=None, chain_mm=None)
+    assert job["status"] == "done"
+    assert job["review_state"] == "needs-review"
+    assert "uncalibrated" in job["evidence"]["review_gate"]["reason"]

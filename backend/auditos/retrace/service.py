@@ -68,6 +68,55 @@ class RetraceService:
                     updated_at TEXT NOT NULL
                 );
             """)
+            columns = {r[1] for r in connection.execute(
+                "PRAGMA table_info(retrace_jobs)")}
+            for name in ("review_state", "review_note", "reviewer", "reviewed_at"):
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE retrace_jobs ADD COLUMN {name} TEXT")
+
+    # -- review gate -------------------------------------------------------
+
+    REVIEW_THRESHOLD_PCT = 2.0
+
+    def evaluate_review(self, evidence: dict | None, params: dict) -> dict:
+        """Deterministic review gate: compare worst anchor residual against
+        threshold. Uncalibrated jobs (no anchors) always need human review."""
+        if not evidence:
+            return {"review_state": "needs-review",
+                    "reason": "no evidence produced"}
+        anchors = (evidence.get("residuals") or {}).get("anchors") or []
+        if not anchors:
+            return {"review_state": "needs-review",
+                    "reason": "uncalibrated (no anchors declared)"}
+        worst = max(anchors, key=lambda a: abs(a["residual_pct"]))
+        if abs(worst["residual_pct"]) <= self.REVIEW_THRESHOLD_PCT:
+            return {"review_state": "auto-pass",
+                    "reason": f"worst anchor {worst['residual_pct']}% within "
+                              f"±{self.REVIEW_THRESHOLD_PCT}%",
+                    "worst_anchor": worst["name"]}
+        return {"review_state": "needs-review",
+                "reason": f"worst anchor {worst['name']} at "
+                          f"{worst['residual_pct']}% exceeds "
+                          f"±{self.REVIEW_THRESHOLD_PCT}%",
+                "worst_anchor": worst["name"]}
+
+    def review_job(self, job_id: str, decision: str, reviewer: str,
+                   note: str = "") -> dict:
+        job = self.get_job(job_id)
+        if job is None:
+            raise ValueError("job not found")
+        if decision not in ("approve", "reject"):
+            raise ValueError("decision must be 'approve' or 'reject'")
+        state = job.get("review_state")
+        if state in ("approved", "rejected"):
+            raise ValueError(f"job already {state}")
+        if job["status"] != "done":
+            raise ValueError("only done jobs can be reviewed")
+        new_state = "approved" if decision == "approve" else "rejected"
+        self._update(job_id, review_state=new_state, reviewer=reviewer or "anonymous",
+                     review_note=note, reviewed_at=utc_now().isoformat())
+        return self.get_job(job_id)  # type: ignore[return-value]
 
     # -- job lifecycle ---------------------------------------------------
 
@@ -114,7 +163,9 @@ class RetraceService:
             )
             evidence["dwg"] = self._maybe_convert_dwg(run_dir, dxf_path,
                                                       bool(params.get("want_dwg")))
-            self._update(job_id, status="done", evidence=evidence)
+            evidence["review_gate"] = self.evaluate_review(evidence, params)
+            self._update(job_id, status="done", evidence=evidence,
+                         review_state=evidence["review_gate"]["review_state"])
         except Exception as exc:  # noqa: BLE001 - surface failure to the job record
             self._update(job_id, status="failed", error=f"{type(exc).__name__}: {exc}")
 
@@ -177,6 +228,10 @@ class RetraceService:
             "params": json.loads(row["params"]),
             "evidence": json.loads(row["evidence"]) if row["evidence"] else None,
             "error": row["error"],
+            "review_state": row["review_state"],
+            "review_note": row["review_note"],
+            "reviewer": row["reviewer"],
+            "reviewed_at": row["reviewed_at"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

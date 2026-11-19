@@ -24,7 +24,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CODE_VERSION = "davylab-cad-round4-r1"
+CODE_VERSION = "davylab-cad-round5-r1"
 INSUNITS = {"mm": 4, "cm": 5, "m": 6, "unitless": 0}
 
 
@@ -207,6 +207,57 @@ def horizontal_partitions(h_lines, frame, tol=8):
           if y0 + 0.01 * (y1 - y0) < y < y1 - 0.01 * (y1 - y0)
           and (b - a) >= 0.95 * fw]
     return cluster_positions(ys, tol)
+
+
+def extract_color_boxes(img: np.ndarray, frame, existing_boxes=None,
+                        min_sat: int = 12, min_val: int = 150):
+    """Color-aware segmentation: light-filled furniture (beige/yellow blocks)
+    is invisible to ink binarization; catch saturated non-white regions in
+    HSV space. Dedupes against ink-derived boxes by IoU > 0.5.
+    Returns (color_boxes, coverage_pct)."""
+    x0, y0, x1, y1 = frame
+    fx0, fy0 = int(x0), int(y0)
+    fx1, fy1 = int(x1), int(y1)
+    if fx1 <= fx0 or fy1 <= fy0:
+        return [], None
+    sub = img[fy0:fy1, fx0:fx1]
+    fh, fw = sub.shape[:2]
+    hsv = cv2.cvtColor(sub, cv2.COLOR_BGR2HSV)
+    sat = hsv[:, :, 1]
+    val = hsv[:, :, 2]
+    colored = ((sat >= min_sat) & (val >= min_val)).astype(np.uint8) * 255
+    colored = cv2.morphologyEx(colored, cv2.MORPH_CLOSE,
+                               cv2.getStructuringElement(
+                                   cv2.MORPH_RECT, (7, 7)))
+    colored = cv2.morphologyEx(colored, cv2.MORPH_OPEN,
+                               cv2.getStructuringElement(
+                                   cv2.MORPH_RECT, (5, 5)))
+    cnts, _ = cv2.findContours(colored, cv2.RETR_EXTERNAL,
+                               cv2.CHAIN_APPROX_SIMPLE)
+    boxes = []
+    min_area = 0.003 * fh * fw
+    max_area = 0.5 * fh * fw  # pale floor-texture blobs must not pass
+    for c in cnts or []:
+        area = cv2.contourArea(c)
+        if area < min_area or area > max_area:
+            continue
+        bx, by, bw2, bh2 = cv2.boundingRect(c)
+        boxes.append([fx0 + bx, fy0 + by, fx0 + bx + bw2, fy0 + by + bh2])
+
+    def _iou(a, b):
+        ax0, ay0, ax1, ay1 = a
+        bx0, by0, bx1, by1 = b
+        ix = max(0, min(ax1, bx1) - max(ax0, bx0))
+        iy = max(0, min(ay1, by1) - max(ay0, by0))
+        inter = ix * iy
+        union = (ax1 - ax0) * (ay1 - ay0) + (bx1 - bx0) * (by1 - by0) - inter
+        return inter / union if union else 0.0
+
+    deduped = [b for b in boxes
+               if not any(_iou(b, e) > 0.5 for e in (existing_boxes or []))]
+    total_colored = int((colored > 0).sum())
+    coverage = round(total_colored / (fh * fw), 4) if fh * fw else None
+    return deduped, coverage
 
 
 def extract_interior(mask: np.ndarray, frame, v_parts, h_parts,
@@ -475,6 +526,8 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
     h_parts = horizontal_partitions(h_lines, frame)
     interior_h, interior_v, product_boxes, interior_recall = extract_interior(
         mask, frame, v_parts, h_parts)
+    color_boxes, color_coverage = extract_color_boxes(img, frame, product_boxes)
+    all_product_boxes = product_boxes + color_boxes
     resid = anchor_residuals(v_parts, h_parts, frame, scale_val,
                              expected_chain=chain_mm,
                              expected_w=width_mm, expected_h=height_mm)
@@ -493,7 +546,7 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
         dims.append({"kind": "v", "y1": 0, "y2": H, "lx": W, "base_x": W + off})
 
     doc = build_dxf(out_dxf_path, frame, scale_val, unit, v_parts, h_parts,
-                    product_boxes=product_boxes, labels=labels, dims=dims,
+                    product_boxes=all_product_boxes, labels=labels, dims=dims,
                     interior_h=interior_h, interior_v=interior_v)
     aud = audit_dxf(out_dxf_path)
     out_paths = {str(out_dxf_path): str(out_dxf_path)}
@@ -509,6 +562,8 @@ def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
                             "interior_h_segments": len(interior_h),
                             "interior_v_segments": len(interior_v),
                             "product_boxes": product_boxes,
+                            "color_boxes": color_boxes,
+                            "color_coverage": color_coverage,
                             "interior_ink_recall": interior_recall},
              "calibration": {"scale_mm_per_px": round(scale_val, 6), "unit": unit,
                              "unit_source": (

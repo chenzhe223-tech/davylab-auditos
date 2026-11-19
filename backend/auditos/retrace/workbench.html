@@ -125,6 +125,7 @@
         <img id="preview" alt="DXF 预览" class="hidden">
         <div class="dl" id="downloads"></div>
         <div class="note" id="dwgnote"></div>
+        <div class="note hidden" id="review"></div>
         <div class="note warn" id="boundary"></div>
       </div>
       <div id="empty" style="color:var(--muted);font-size:13px;padding:30px 0;text-align:center;">
@@ -219,6 +220,40 @@ function render(job) {
         ? `DWG 已生成（${dwg.bytes} bytes）。注意：ODA 编码级产物，非 AutoCAD GUI 打开性验收。`
         : `DWG 未生成：${dwg.detail || dwg.status}`)
     : "未请求 DWG 转换。";
+  // review gate panel
+  const rv = $("review");
+  rv.classList.remove("hidden");
+  const gate = ev.review_gate || {};
+  const state = job.review_state || gate.review_state || "—";
+  const badgeCls = state === "approved" || state === "auto-pass" ? "done"
+                 : state === "rejected" ? "failed" : "pending";
+  let html = `<div style="display:flex;align-items:center;gap:10px">
+    <span>复核门</span><span class="badge ${badgeCls}">${state}</span>
+    <span style="font-size:12px;color:#666">${gate.reason || job.review_note || ""}</span></div>`;
+  if (state !== "approved" && state !== "rejected" && state !== "—") {
+    html += `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+      <input id="reviewer-name" placeholder="复核人" style="width:120px;padding:4px 8px;border:1px solid #ccc;border-radius:6px">
+      <button id="approve-btn">通过</button>
+      <button id="reject-btn" style="background:var(--bad)">驳回</button></div>`;
+  } else if (job.reviewed_at) {
+    html += `<div style="font-size:12px;color:#666;margin-top:6px">
+      复核人 ${job.reviewer || "—"} · ${job.reviewed_at}${job.review_note ? " · " + job.review_note : ""}</div>`;
+  }
+  rv.innerHTML = html;
+  const approve = $("approve-btn");
+  if (approve) {
+    const submit = async (decision) => {
+      const name = $("reviewer-name").value.trim() || "anonymous";
+      const res = await fetch(`/api/retrace/jobs/${job.id}/review`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({decision, reviewer: name,
+                              note: decision === "reject" ? "人工驳回" : "人工确认"})});
+      if (!res.ok) { const e = await res.json(); alert(e.detail || "复核失败"); return; }
+      render(await res.json());
+    };
+    approve.onclick = () => submit("approve");
+    $("reject-btn").onclick = () => submit("reject");
+  }
   $("boundary").textContent = "边界声明：无 OCR / 语义识别；文字标签为人工读图录入；渲染图/照片不支持；DWG 为编码级转换。";
 }
 
