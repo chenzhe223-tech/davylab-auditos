@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAVYLAB CAD 工作台 · 图纸重绘</title>
+<style>
+  :root {
+    --ink: #1f2933; --muted: #52606d; --line: #cbd5df; --bg: #f5f7fa;
+    --panel: #ffffff; --accent: #0f5aa8; --ok: #147d52; --warn: #b5791f; --bad: #a63d3d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.5; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  h1 { font-size: 22px; letter-spacing: .5px; }
+  h1 .lab { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 16px; }
+  .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px;
+              color: var(--muted); margin-bottom: 12px; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=number], select, textarea {
+      width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+      font-size: 13.5px; font-family: inherit; background: #fbfcfe; }
+  textarea { height: 84px; font-family: Consolas, monospace; font-size: 12px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13.5px; }
+  button { margin-top: 14px; width: 100%; padding: 10px; border: 0; border-radius: 7px;
+           background: var(--accent); color: #fff; font-size: 14.5px; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: wait; }
+  .caps { font-size: 12px; color: var(--muted); margin-top: 12px; border-top: 1px dashed var(--line);
+          padding-top: 10px; }
+  .caps b { color: var(--ink); }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px;
+           color: #fff; background: var(--muted); }
+  .badge.done { background: var(--ok); } .badge.failed { background: var(--bad); }
+  .badge.pending { background: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num { font-family: Consolas, monospace; }
+  .kpi { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+  .kpi div { background: #f0f4f9; border: 1px solid var(--line); border-radius: 8px;
+             padding: 8px 14px; min-width: 120px; }
+  .kpi span { display: block; font-size: 11px; color: var(--muted); }
+  .kpi b { font-size: 16px; font-family: Consolas, monospace; }
+  .dl { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .dl a { text-decoration: none; font-size: 13px; padding: 7px 14px; border-radius: 6px;
+          border: 1px solid var(--accent); color: var(--accent); }
+  .dl a:hover { background: var(--accent); color: #fff; }
+  #preview { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .note.warn { color: var(--warn); }
+  #msg { font-size: 13px; margin-top: 10px; color: var(--bad); white-space: pre-wrap; }
+  footer { margin-top: 28px; text-align: center; font-size: 12px; color: var(--muted); }
+  footer b { color: var(--accent); letter-spacing: 1px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="lab">DAVYLAB</span> CAD 工作台 · 图纸重绘 Agent</h1>
+  </header>
+  <div class="sub">栅格线稿 → 标定 DXF（原生尺寸标注）· 本地优先 · 证据留痕 · 未标定输出不声明单位</div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>1 · 输入与标定</h2>
+      <label>图纸图片（PNG / JPG，≤20MB，线稿类）</label>
+      <input type="file" id="file" accept=".png,.jpg,.jpeg">
+
+      <div class="row2">
+        <div>
+          <label>单位声明</label>
+          <select id="unit">
+            <option value="mm-assumed">mm（假设，图面未标）</option>
+            <option value="mm-declared">mm（已确认）</option>
+            <option value="unitless">无单位（仅描迹）</option>
+          </select>
+        </div>
+        <div>
+          <label>标定宽（mm，图面读取）</label>
+          <input type="number" id="width_mm" placeholder="如 3200">
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label>校验高（mm，独立锚）</label>
+          <input type="number" id="height_mm" placeholder="如 1180">
+        </div>
+        <div>
+          <label>内部尺寸链（mm，逗号分隔）</label>
+          <input type="text" id="chain_mm" placeholder="如 2000,100,500,600">
+        </div>
+      </div>
+      <label>文字标签 JSON（人工读图，可选）</label>
+      <textarea id="labels_json" placeholder='{"labels": [[x_px, y_px, "文本", 字高px], ...]}'></textarea>
+      <div class="check"><input type="checkbox" id="emit_dims" checked><span>生成原生 DIMENSION 标注</span></div>
+      <div class="check"><input type="checkbox" id="want_dwg"><span>同时转出 DWG（ACAD2018，经 ODA，编码级）</span></div>
+      <button id="go">执行重绘</button>
+      <div id="msg"></div>
+      <div class="caps" id="caps">能力探测中…</div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · 结果与证据</h2>
+      <div id="result" class="hidden">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="status" class="badge">pending</span>
+          <span style="font-size:12px;color:var(--muted)" id="jobid"></span>
+        </div>
+        <div class="kpi" id="kpi"></div>
+        <div id="residualBlock">
+          <table id="residuals"><thead>
+            <tr><th>校验锚</th><th>期望 (mm)</th><th>实测 (mm)</th><th>残差 (mm)</th><th>残差 %</th></tr>
+          </thead><tbody></tbody></table>
+        </div>
+        <img id="preview" alt="DXF 预览" class="hidden">
+        <div class="dl" id="downloads"></div>
+        <div class="note" id="dwgnote"></div>
+        <div class="note warn" id="boundary"></div>
+      </div>
+      <div id="empty" style="color:var(--muted);font-size:13px;padding:30px 0;text-align:center;">
+        上传线稿并填写标定锚后执行。所有尺寸残差、实体计数与审计结果都来自真实运行，逐次留痕。
+      </div>
+    </div>
+  </div>
+
+  <footer>By <b>DAVYLAB</b> · AuditOS CAD Retrace Agent · 本地优先，证据可追溯</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = v => (v === null || v === undefined) ? "—" : v;
+
+async function loadCaps() {
+  try {
+    const r = await fetch("/api/retrace/capabilities");
+    const c = await r.json();
+    $("caps").innerHTML =
+      `引擎 <b>${c.code_version}</b> · OpenCV <b>${fmt(c.opencv)}</b> · ` +
+      `ODA 转 DWG <b>${c.oda_converter ? "可用" : "本机不可用"}</b> · ` +
+      `上限 <b>${Math.round(c.max_image_bytes/1048576)}MB</b><br>` +
+      c.boundaries.map(b => "· " + b).join("<br>");
+  } catch { $("caps").textContent = "能力探测失败（服务未启动？）"; }
+}
+
+$("go").onclick = async () => {
+  const f = $("file").files[0];
+  if (!f) { $("msg").textContent = "请先选择图纸图片"; return; }
+  $("go").disabled = true; $("msg").textContent = "";
+  const fd = new FormData();
+  fd.append("file", f);
+  const unit = $("unit").value;
+  fd.append("unit", unit === "mm-declared" ? "mm" : (unit === "mm-assumed" ? "mm" : "unitless"));
+  fd.append("declare_mm_assumed", unit === "mm-assumed");
+  if ($("width_mm").value) fd.append("width_mm", $("width_mm").value);
+  if ($("height_mm").value) fd.append("height_mm", $("height_mm").value);
+  if ($("chain_mm").value) fd.append("chain_mm", $("chain_mm").value);
+  fd.append("emit_dims", $("emit_dims").checked);
+  fd.append("want_dwg", $("want_dwg").checked);
+  if ($("labels_json").value.trim()) fd.append("labels_json", $("labels_json").value);
+  try {
+    const r = await fetch("/api/retrace/jobs", { method: "POST", body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.statusText);
+    render(data);
+  } catch (e) { $("msg").textContent = "失败：" + e.message; }
+  $("go").disabled = false;
+};
+
+function render(job) {
+  $("empty").classList.add("hidden");
+  $("result").classList.remove("hidden");
+  const st = $("status"); st.textContent = job.status; st.className = "badge " + job.status;
+  $("jobid").textContent = job.id;
+  if (job.status === "failed") {
+    $("msg").textContent = "任务失败：" + (job.error || "未知错误");
+    return;
+  }
+  const ev = job.evidence || {};
+  const ents = ev.audit?.entity_counts || {};
+  const dimCount = ents.DIMENSION || 0;
+  const worst = (ev.residuals?.anchors || []).reduce((m, a) =>
+    Math.abs(a.residual_pct || 0) > Math.abs(m) ? a.residual_pct : m, 0);
+  $("kpi").innerHTML = `
+    <div><span>外框实测 (mm)</span><b>${(ev.residuals?.frame_mm || []).join(" × ") || "—"}</b></div>
+    <div><span>最差锚残差</span><b>${fmt(worst ? worst.toFixed(2) + "%" : "0%")}</b></div>
+    <div><span>原生 DIMENSION</span><b>${dimCount}</b></div>
+    <div><span>审计错误</span><b>${ev.audit?.errors ?? "—"}</b></div>
+    <div><span>单位来源</span><b style="font-size:13px">${ev.calibration?.unit_source || "—"}</b></div>`;
+  const tb = $("residuals").querySelector("tbody"); tb.innerHTML = "";
+  (ev.residuals?.anchors || []).forEach(a => {
+    tb.insertAdjacentHTML("beforeend",
+      `<tr><td>${a.name}</td><td class="num">${a.expected_mm}</td>
+       <td class="num">${a.actual_mm}</td>
+       <td class="num" style="color:${Math.abs(a.residual_pct) > 2 ? "var(--bad)" : "var(--ok)"}">${a.residual_mm}</td>
+       <td class="num">${a.residual_pct}%</td></tr>`);
+  });
+  $("preview").src = `/api/retrace/jobs/${job.id}/artifacts/png`;
+  $("preview").classList.remove("hidden");
+  const dl = $("downloads"); dl.innerHTML = "";
+  [["dxf", "下载 DXF"], ["evidence", "下载证据 JSON"], ["png", "下载预览图"],
+   ["dwg", "下载 DWG"], ["input", "下载原图"]].forEach(([k, t]) => {
+    const a = document.createElement("a");
+    a.href = `/api/retrace/jobs/${job.id}/artifacts/${k}`; a.textContent = t; a.download = "";
+    dl.appendChild(a);
+  });
+  const dwg = ev.dwg || {};
+  $("dwgnote").textContent = dwg.requested
+    ? (dwg.status === "converted"
+        ? `DWG 已生成（${dwg.bytes} bytes）。注意：ODA 编码级产物，非 AutoCAD GUI 打开性验收。`
+        : `DWG 未生成：${dwg.detail || dwg.status}`)
+    : "未请求 DWG 转换。";
+  $("boundary").textContent = "边界声明：无 OCR / 语义识别；文字标签为人工读图录入；渲染图/照片不支持；DWG 为编码级转换。";
+}
+
+loadCaps();
+</script>
+</body>
+</html>

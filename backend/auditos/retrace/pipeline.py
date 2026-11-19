@@ -307,14 +307,80 @@ def record_run(input_path, out_paths, extra, record_path, command):
     return rec
 
 
+def run(image_path, out_dxf_path, *, unit="unitless", declare_mm_assumed=False,
+        scale=1.0, width_mm=None, height_mm=None, chain_mm=None,
+        emit_dims=False, labels=None, preview_png=None) -> dict:
+    """Programmatic entry point. Returns the evidence record dict.
+
+    Writes: DXF at out_dxf_path, evidence JSON next to it, optional preview PNG.
+    `labels` is a list of [x_px, y_px, text, height_px] (human-entered).
+    """
+    image_path = Path(image_path)
+    out_dxf_path = Path(out_dxf_path)
+    img = cv2.imread(str(image_path))
+    if img is None:
+        raise ValueError(f"cannot read image {image_path}")
+    pf = preflight(img)
+    mask = binarize(img)
+    h_lines, v_lines, frame, n_contours = extract_structural_lines(mask)
+    if frame is None:
+        raise ValueError("no structural frame detected")
+
+    if width_mm and scale == 1.0:
+        scale_val = width_mm / (frame[2] - frame[0])
+    else:
+        scale_val = scale or 1.0
+    v_parts = vertical_partitions(v_lines, frame)
+    h_parts = horizontal_partitions(h_lines, frame)
+    resid = anchor_residuals(v_parts, h_parts, frame, scale_val,
+                             expected_chain=chain_mm,
+                             expected_w=width_mm, expected_h=height_mm)
+
+    dims = []
+    if emit_dims:
+        x0, y0, x1, y1 = frame
+        H = (y1 - y0) * scale_val
+        W = (x1 - x0) * scale_val
+        off = 0.12 * H
+        dims.append({"kind": "h", "x1": 0, "x2": W, "ly": 0, "base_y": -off})
+        bnd = [0] + [(p - x0) * scale_val for p, _ in v_parts] + [W]
+        for i in range(len(bnd) - 1):
+            dims.append({"kind": "h", "x1": bnd[i], "x2": bnd[i + 1], "ly": 0,
+                         "base_y": -off * 1.9})
+        dims.append({"kind": "v", "y1": 0, "y2": H, "lx": W, "base_x": W + off})
+
+    doc = build_dxf(out_dxf_path, frame, scale_val, unit, v_parts, h_parts,
+                    product_boxes=None, labels=labels, dims=dims)
+    aud = audit_dxf(out_dxf_path)
+    out_paths = {str(out_dxf_path): str(out_dxf_path)}
+    if preview_png:
+        render_preview(doc, Path(preview_png))
+        out_paths[preview_png] = preview_png
+
+    extra = {"preflight": pf,
+             "extraction": {"h_lines": len(h_lines), "v_lines": len(v_lines),
+                            "contours_non_line": n_contours,
+                            "v_partitions_px": v_parts, "h_partitions_px": h_parts,
+                            "frame_px": frame},
+             "calibration": {"scale_mm_per_px": round(scale_val, 6), "unit": unit,
+                             "unit_source": "assumed" if declare_mm_assumed
+                             else ("declared" if unit != "unitless" else "unitless-uncalibrated")},
+             "residuals": resid,
+             "audit": aud}
+    evidence_path = out_dxf_path.with_suffix(".evidence.json")
+    rec = record_run(image_path, out_paths, extra, evidence_path,
+                     "retrace.run(programmatic)")
+    rec["artifact_paths"] = {"dxf": str(out_dxf_path), "evidence": str(evidence_path),
+                             "png": str(preview_png) if preview_png else None}
+    return rec
+
+
 def main():
     ap = argparse.ArgumentParser(description="DAVYLAB CAD retrace (independent)")
     ap.add_argument("--image", required=True)
     ap.add_argument("--out", required=True, help="output DXF path")
     ap.add_argument("--unit", default="unitless", choices=list(INSUNITS))
-    ap.add_argument("--scale", type=float, default=1.0, help="mm per pixel (0=auto from anchors)")
-    ap.add_argument("--anchor-width-px", type=float, default=None,
-                    help="measured frame width px for auto scale")
+    ap.add_argument("--scale", type=float, default=1.0, help="mm per pixel")
     ap.add_argument("--width-mm", type=float, default=None)
     ap.add_argument("--height-mm", type=float, default=None)
     ap.add_argument("--chain-mm", type=float, nargs="*", default=None,
@@ -327,67 +393,18 @@ def main():
                     help="record that mm unit is assumed, not printed on source")
     args = ap.parse_args()
 
-    img = cv2.imread(str(args.image))
-    if img is None:
-        sys.exit(f"cannot read image {args.image}")
-    pf = preflight(img)
-    mask = binarize(img)
-    h_lines, v_lines, frame, n_contours = extract_structural_lines(mask)
-    if frame is None:
-        sys.exit("no structural frame detected")
+    labels = []
+    if args.labels_json:
+        data = json.loads(Path(args.labels_json).read_text("utf-8"))
+        labels = data.get("labels", []) if isinstance(data, dict) else data
 
-    # calibration
-    if args.width_mm and not args.anchor_width_px:
-        scale = args.width_mm / (frame[2] - frame[0])  # auto: calibrate on detected frame width
-    elif args.width_mm and args.anchor_width_px:
-        scale = args.width_mm / args.anchor_width_px
-    else:
-        scale = args.scale or 1.0
-    v_parts = vertical_partitions(v_lines, frame)
-    h_parts = horizontal_partitions(h_lines, frame)
-    resid = anchor_residuals(v_parts, h_parts, frame, scale,
-                             expected_chain=args.chain_mm,
-                             expected_w=args.width_mm, expected_h=args.height_mm)
-
-    labels_data = json.loads(Path(args.labels_json).read_text("utf-8")) if args.labels_json else {}
-    labels = labels_data.get("labels", []) if isinstance(labels_data, dict) else labels_data
-
-    dims = []
-    if args.dims:
-        x0, y0, x1, y1 = frame
-        H = (y1 - y0) * scale
-        W = (x1 - x0) * scale
-        off = 0.12 * H
-        dims.append({"kind": "h", "x1": 0, "x2": W, "ly": 0, "base_y": -off})
-        bnd = [0] + [(p - x0) * scale for p, _ in v_parts] + [W]
-        for i in range(len(bnd) - 1):
-            dims.append({"kind": "h", "x1": bnd[i], "x2": bnd[i + 1], "ly": 0,
-                         "base_y": -off * 1.9})
-        dims.append({"kind": "v", "y1": 0, "y2": H, "lx": W, "base_x": W + off})
-
-    doc = build_dxf(Path(args.out), frame, scale, args.unit, v_parts, h_parts,
-                    product_boxes=None, labels=labels, dims=dims)
-    aud = audit_dxf(Path(args.out))
-    png = None
-    if args.png:
-        render_preview(doc, Path(args.png))
-        png = args.png
-
-    out_paths = {args.out: args.out}
-    if png:
-        out_paths[png] = png
-    extra = {"preflight": pf,
-             "extraction": {"h_lines": len(h_lines), "v_lines": len(v_lines),
-                            "contours_non_line": n_contours,
-                            "v_partitions_px": v_parts, "h_partitions_px": h_parts,
-                            "frame_px": frame},
-             "calibration": {"scale_mm_per_px": round(scale, 6), "unit": args.unit,
-                             "unit_source": "assumed" if args.declare_mm_assumed
-                             else ("declared" if args.unit != "unitless" else "unitless-uncalibrated")},
-             "residuals": resid,
-             "audit": aud}
-    rec = record_run(args.image, out_paths, extra, args.evidence or str(Path(args.out).with_suffix(".run.json")), " ".join(sys.argv))
-    print(json.dumps({k: rec[k] for k in ("code_version", "calibration", "residuals", "audit")}, indent=2, ensure_ascii=False))
+    rec = run(args.image, args.out, unit=args.unit,
+              declare_mm_assumed=args.declare_mm_assumed, scale=args.scale,
+              width_mm=args.width_mm, height_mm=args.height_mm,
+              chain_mm=args.chain_mm, emit_dims=args.dims, labels=labels,
+              preview_png=args.png)
+    print(json.dumps({k: rec[k] for k in ("code_version", "calibration", "residuals", "audit")},
+                     indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

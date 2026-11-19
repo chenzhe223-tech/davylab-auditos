@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
@@ -138,3 +138,100 @@ def export_findings(project_id: str) -> StreamingResponse:
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="auditos-findings-{project_id}.xlsx"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# CAD image retrace (P0/P1 workbench) — independent implementation.
+# ---------------------------------------------------------------------------
+
+import json as _json  # noqa: E402  (section-local imports kept at the boundary)
+
+from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
+
+from auditos.retrace.service import MAX_IMAGE_BYTES, get_service  # noqa: E402
+
+RETRACE_TAGS = ["cad-retrace"]
+
+
+def _parse_chain(raw: str | None) -> list[float] | None:
+    if not raw:
+        return None
+    values = [float(part) for part in raw.replace(";", ",").split(",") if part.strip()]
+    return values or None
+
+
+def _parse_labels(raw: str | None) -> list | None:
+    if not raw:
+        return None
+    data = _json.loads(raw)
+    return data.get("labels", []) if isinstance(data, dict) else data
+
+
+@router.get("/retrace/capabilities", tags=RETRACE_TAGS)
+def retrace_capabilities() -> dict:
+    return get_service().capabilities()
+
+
+@router.post("/retrace/jobs", tags=RETRACE_TAGS)
+async def create_retrace_job(
+    file: UploadFile = File(...),
+    unit: str = Form("unitless"),
+    declare_mm_assumed: bool = Form(False),
+    width_mm: float | None = Form(None),
+    height_mm: float | None = Form(None),
+    chain_mm: str | None = Form(None),
+    emit_dims: bool = Form(True),
+    want_dwg: bool = Form(False),
+    labels_json: str | None = Form(None),
+) -> dict:
+    """Upload a line-drawing image and run the calibrated retrace pipeline."""
+    params = {
+        "unit": unit,
+        "declare_mm_assumed": declare_mm_assumed,
+        "width_mm": width_mm,
+        "height_mm": height_mm,
+        "chain_mm": _parse_chain(chain_mm),
+        "emit_dims": emit_dims,
+        "want_dwg": want_dwg,
+        "labels": _parse_labels(labels_json),
+        "emit_png": True,
+    }
+    try:
+        content = await file.read(MAX_IMAGE_BYTES + 1)
+    finally:
+        await file.close()
+    if len(content) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds 20 MiB limit")
+    try:
+        return get_service().create_job(content, file.filename or "", params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/retrace/jobs", tags=RETRACE_TAGS)
+def list_retrace_jobs() -> list[dict]:
+    return get_service().list_jobs()
+
+
+@router.get("/retrace/jobs/{job_id}", tags=RETRACE_TAGS)
+def get_retrace_job(job_id: str) -> dict:
+    job = get_service().get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Retrace job not found")
+    return job
+
+
+@router.get("/retrace/jobs/{job_id}/artifacts/{kind}", tags=RETRACE_TAGS)
+def get_retrace_artifact(job_id: str, kind: str) -> FileResponse:
+    if get_service().get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="Retrace job not found")
+    path = get_service().artifact_path(job_id, kind)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail=f"Artifact '{kind}' not available")
+    return FileResponse(path, filename=path.name)
+
+
+@router.get("/retrace/workbench", tags=RETRACE_TAGS, include_in_schema=False)
+def retrace_workbench() -> HTMLResponse:
+    page = Path(__file__).resolve().parents[1] / "retrace" / "workbench.html"
+    return HTMLResponse(page.read_text("utf-8"))
